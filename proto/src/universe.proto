@@ -38,10 +38,16 @@ message KeyRange {
     bytes upper_bound_exclusive = 3;
 }
 
+message ZonedKeyRange {
+    Zone zone = 1;
+    KeyRange key_range = 2;
+}
+
 message CreateKeyspaceRequest {
     string namespace = 1;
     string name = 2;
     Zone primary_zone = 3;
+    repeated Zone secondary_zones = 4;
     repeated KeyRangeRequest base_key_ranges = 5;
 }
 
@@ -55,6 +61,8 @@ message KeyspaceInfo {
     string name = 3;
     Zone primary_zone = 4;
     repeated KeyRange base_key_ranges = 5;
+    repeated Zone secondary_zones = 6;
+    repeated ZonedKeyRange secondary_key_ranges = 7;
 }
 
 message ListKeyspacesRequest {

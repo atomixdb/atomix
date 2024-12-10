@@ -48,6 +48,15 @@ async fn test_create_and_list_keyspace_handlers() {
         name: keyspace_name.to_string(),
         namespace: namespace.to_string(),
         primary_zone,
+        secondary_zones: vec![proto::universe::Zone {
+            region: Some(proto::universe::Region {
+                cloud: Some(proto::universe::region::Cloud::OtherCloud(
+                    "lalakis".to_string(),
+                )),
+                name: "test_region_2".to_string(),
+            }),
+            name: "test_zone_2".to_string(),
+        }],
         base_key_ranges,
     };
     let keyspace_id = client

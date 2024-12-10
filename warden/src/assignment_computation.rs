@@ -537,6 +537,13 @@ mod tests {
                         }),
                         name: "test_zone".to_string(),
                     }),
+                    secondary_zones: vec![proto::universe::Zone {
+                        region: Some(proto::universe::Region {
+                            cloud: None,
+                            name: "test".to_string(),
+                        }),
+                        name: "test_zone_secondary".to_string(),
+                    }],
                     base_key_ranges: self
                         .base_ranges
                         .lock()

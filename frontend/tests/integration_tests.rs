@@ -225,6 +225,7 @@ async fn test_frontend() {
             namespace: context.keyspace.namespace.clone(),
             name: context.keyspace.name.clone(),
             primary_zone: Some(context.zone.clone()),
+            secondary_zones: vec![],
             base_key_ranges: context.base_key_ranges.clone(),
         })
         .await

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use super::*;
-use proto::universe::KeyspaceInfo;
+use proto::universe::{KeyRange, KeyspaceInfo, Zone, ZonedKeyRange};
 use scylla::macros::{FromUserType, SerializeValue};
 use scylla::query::Query;
 use scylla::statement::SerialConsistency;
@@ -18,18 +18,18 @@ pub struct Cassandra {
 
 static CREATE_KEYSPACE_QUERY: &str = r#"
     INSERT INTO atomix.keyspaces
-    (keyspace_id, name, namespace, primary_zone, base_key_ranges)
-    VALUES (?, ?, ?, ?, ?)
+    (keyspace_id, name, namespace, primary_zone, secondary_zones, base_key_ranges, secondary_key_ranges)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     IF NOT EXISTS
 "#;
 
 static LIST_KEYSPACES_QUERY: &str = r#"
-    SELECT keyspace_id, name, namespace, primary_zone, base_key_ranges
+    SELECT keyspace_id, name, namespace, primary_zone, secondary_zones, base_key_ranges, secondary_key_ranges
     FROM atomix.keyspaces
 "#;
 
 static GET_KEYSPACE_INFO_BY_KEYSPACE_QUERY: &str = r#"
-    SELECT keyspace_id, name, namespace, primary_zone, base_key_ranges
+    SELECT keyspace_id, name, namespace, primary_zone, secondary_zones, base_key_ranges, secondary_key_ranges
     FROM atomix.keyspaces
     WHERE namespace = ? AND name = ?
 "#;
@@ -37,7 +37,7 @@ static GET_KEYSPACE_INFO_BY_KEYSPACE_QUERY: &str = r#"
 //  TODO(kelly): Add ALLOW FILTERING is bad - discuss whether we will ever need to query by KeyspaceId in practice
 //  and create an index on the field if so.
 static GET_KEYSPACE_INFO_BY_KEYSPACE_ID_QUERY: &str = r#"
-    SELECT keyspace_id, name, namespace, primary_zone, base_key_ranges
+    SELECT keyspace_id, name, namespace, primary_zone, secondary_zones, base_key_ranges, secondary_key_ranges
     FROM atomix.keyspaces
     WHERE keyspace_id = ? ALLOW FILTERING
 "#;
@@ -60,12 +60,6 @@ fn scylla_query_error_to_storage_error(qe: QueryError) -> Error {
     }
 }
 
-// Wrapper struct for the KeyspaceInfo proto.
-// This is needed because the KeyspaceInfo proto is not directly convertible to
-// a Scylla row. Instead, we need to implement the FromRow trait.
-#[derive(Debug)]
-struct KeyspaceInfoWrapper(KeyspaceInfo);
-
 #[derive(Debug, FromUserType, SerializeValue)]
 struct SerializedRegion {
     name: String,
@@ -78,6 +72,48 @@ struct SerializedZone {
     name: String,
 }
 
+impl SerializedZone {
+    fn from_zone(zone: Zone) -> Self {
+        SerializedZone {
+            name: zone.name.clone(),
+            region: zone.region.map(|region| SerializedRegion {
+                name: region.name.clone(),
+                cloud: match region.cloud {
+                    Some(proto::universe::region::Cloud::PublicCloud(cloud)) => Some(
+                        proto::universe::Cloud::try_from(cloud)
+                            .unwrap()
+                            .as_str_name()
+                            .to_string(),
+                    ),
+                    Some(proto::universe::region::Cloud::OtherCloud(other)) => Some(other),
+                    None => None,
+                },
+            }),
+        }
+    }
+
+    fn to_zone(self) -> Zone {
+        Zone {
+            name: self.name.clone(),
+            region: self.region.map(|region| proto::universe::Region {
+                name: region.name,
+                cloud: region.cloud.map(|cloud| match cloud.as_str() {
+                    "AWS" => proto::universe::region::Cloud::PublicCloud(
+                        proto::universe::Cloud::Aws as i32,
+                    ),
+                    "AZURE" => proto::universe::region::Cloud::PublicCloud(
+                        proto::universe::Cloud::Azure as i32,
+                    ),
+                    "GCP" => proto::universe::region::Cloud::PublicCloud(
+                        proto::universe::Cloud::Gcp as i32,
+                    ),
+                    other => proto::universe::region::Cloud::OtherCloud(other.to_string()),
+                }),
+            }),
+        }
+    }
+}
+
 #[derive(Debug, FromUserType, SerializeValue)]
 struct SerializedKeyRange {
     base_range_uuid: Uuid,
@@ -85,15 +121,24 @@ struct SerializedKeyRange {
     upper_bound_exclusive: Option<Vec<u8>>,
 }
 
+#[derive(Debug, FromUserType, SerializeValue)]
+struct SerializedZonedKeyRange {
+    zone: SerializedZone,
+    key_range: SerializedKeyRange,
+}
+
+// Wrapper struct for the KeyspaceInfo proto.
+// This is needed because the KeyspaceInfo proto is not directly convertible to
+// a Scylla row. Instead, we need to implement the FromRow trait.
 #[derive(Debug, FromRow, SerializeRow)]
 struct SerializedKeyspaceInfo {
     keyspace_id: Uuid,
     name: String,
     namespace: String,
     primary_zone: SerializedZone,
-    // We need Option here because Scylla doesn't support empty lists.
-    // Without Option, on reading, deserialization will fail if the list is empty.
+    secondary_zones: Vec<SerializedZone>,
     base_key_ranges: Vec<SerializedKeyRange>,
+    secondary_key_ranges: Vec<SerializedZonedKeyRange>,
 }
 
 impl SerializedKeyspaceInfo {
@@ -102,34 +147,39 @@ impl SerializedKeyspaceInfo {
         name: String,
         namespace: String,
         primary_zone: Zone,
+        secondary_zones: Vec<Zone>,
         base_key_range_requests: Vec<KeyRange>,
+        secondary_key_ranges: Vec<ZonedKeyRange>,
     ) -> Self {
         SerializedKeyspaceInfo {
             keyspace_id,
             name,
             namespace,
-            primary_zone: SerializedZone {
-                name: primary_zone.name,
-                region: primary_zone.region.map(|region| SerializedRegion {
-                    name: region.name,
-                    cloud: match region.cloud {
-                        Some(proto::universe::region::Cloud::PublicCloud(cloud)) => Some(
-                            proto::universe::Cloud::try_from(cloud)
-                                .unwrap()
-                                .as_str_name()
-                                .to_string(),
-                        ),
-                        Some(proto::universe::region::Cloud::OtherCloud(other)) => Some(other),
-                        None => None,
-                    },
-                }),
-            },
+            primary_zone: SerializedZone::from_zone(primary_zone),
+            secondary_zones: secondary_zones
+                .into_iter()
+                .map(|zone| SerializedZone::from_zone(zone))
+                .collect(),
             base_key_ranges: base_key_range_requests
                 .into_iter()
                 .map(|range| SerializedKeyRange {
                     base_range_uuid: Uuid::from_str(&range.base_range_uuid).unwrap(),
                     lower_bound_inclusive: Some(range.lower_bound_inclusive),
                     upper_bound_exclusive: Some(range.upper_bound_exclusive),
+                })
+                .collect(),
+            secondary_key_ranges: secondary_key_ranges
+                .into_iter()
+                .map(|zkr| {
+                    let range = zkr.key_range.unwrap();
+                    SerializedZonedKeyRange {
+                        zone: SerializedZone::from_zone(zkr.zone.unwrap()),
+                        key_range: SerializedKeyRange {
+                            base_range_uuid: Uuid::from_str(&range.base_range_uuid).unwrap(),
+                            lower_bound_inclusive: Some(range.lower_bound_inclusive),
+                            upper_bound_exclusive: Some(range.upper_bound_exclusive),
+                        },
+                    }
                 })
                 .collect(),
         }
@@ -167,12 +217,31 @@ impl SerializedKeyspaceInfo {
                 upper_bound_exclusive: range.upper_bound_exclusive.unwrap_or_default(),
             })
             .collect();
+
+        let secondary_key_ranges = self
+            .secondary_key_ranges
+            .into_iter()
+            .map(|zkr| ZonedKeyRange {
+                zone: Some(zkr.zone.to_zone()),
+                key_range: Some(KeyRange {
+                    base_range_uuid: zkr.key_range.base_range_uuid.to_string(),
+                    lower_bound_inclusive: zkr.key_range.lower_bound_inclusive.unwrap_or_default(),
+                    upper_bound_exclusive: zkr.key_range.upper_bound_exclusive.unwrap_or_default(),
+                }),
+            })
+            .collect();
         KeyspaceInfo {
             keyspace_id: self.keyspace_id.to_string(),
             name: self.name,
             namespace: self.namespace,
             primary_zone: Some(primary_zone),
-            base_key_ranges,
+            base_key_ranges: base_key_ranges,
+            secondary_zones: self
+                .secondary_zones
+                .into_iter()
+                .map(|serialized_zone| serialized_zone.to_zone())
+                .collect(),
+            secondary_key_ranges: secondary_key_ranges,
         }
     }
 }
@@ -195,7 +264,9 @@ impl Storage for Cassandra {
         name: &str,
         namespace: &str,
         primary_zone: Zone,
+        secondary_zones: Vec<Zone>,
         base_key_ranges: Vec<KeyRange>,
+        secondary_key_ranges: Vec<ZonedKeyRange>,
     ) -> Result<String, Error> {
         // TODO: Validate base_key_ranges
 
@@ -205,7 +276,9 @@ impl Storage for Cassandra {
             name.to_string(),
             namespace.to_string(),
             primary_zone,
+            secondary_zones,
             base_key_ranges,
+            secondary_key_ranges,
         );
 
         let keyspace_id = keyspace_id.to_string();
@@ -340,6 +413,22 @@ mod tests {
                 }),
                 name: "example_zone".to_string(),
             }),
+            secondary_zones: vec![
+                Zone {
+                    region: Some(Region {
+                        name: "example_region_1".to_string(),
+                        cloud: Some(region::Cloud::PublicCloud(Cloud::Aws as i32)),
+                    }),
+                    name: "example_zone_1".to_string(),
+                },
+                Zone {
+                    region: Some(Region {
+                        name: "example_region_2".to_string(),
+                        cloud: Some(region::Cloud::PublicCloud(Cloud::Aws as i32)),
+                    }),
+                    name: "example_zone_2".to_string(),
+                },
+            ],
             base_key_ranges: vec![
                 KeyRange {
                     base_range_uuid: Uuid::new_v4().to_string(),
@@ -350,6 +439,36 @@ mod tests {
                     base_range_uuid: Uuid::new_v4().to_string(),
                     lower_bound_inclusive: vec![128, 0, 0],
                     upper_bound_exclusive: vec![255, 255, 255],
+                },
+            ],
+            secondary_key_ranges: vec![
+                ZonedKeyRange {
+                    zone: Some(Zone {
+                        region: Some(Region {
+                            name: "example_region_1".to_string(),
+                            cloud: Some(region::Cloud::PublicCloud(Cloud::Aws as i32)),
+                        }),
+                        name: "example_zone_1".to_string(),
+                    }),
+                    key_range: Some(KeyRange {
+                        base_range_uuid: Uuid::new_v4().to_string(),
+                        lower_bound_inclusive: vec![0, 0, 0],
+                        upper_bound_exclusive: vec![128, 0, 0],
+                    }),
+                },
+                ZonedKeyRange {
+                    zone: Some(Zone {
+                        region: Some(Region {
+                            name: "example_region_2".to_string(),
+                            cloud: Some(region::Cloud::PublicCloud(Cloud::Aws as i32)),
+                        }),
+                        name: "example_zone_2".to_string(),
+                    }),
+                    key_range: Some(KeyRange {
+                        base_range_uuid: Uuid::new_v4().to_string(),
+                        lower_bound_inclusive: vec![128, 0, 0],
+                        upper_bound_exclusive: vec![255, 255, 255],
+                    }),
                 },
             ],
         }
@@ -367,15 +486,9 @@ mod tests {
             original.name.clone(),
             original.namespace.clone(),
             original.primary_zone.clone().unwrap(),
-            original
-                .base_key_ranges
-                .iter()
-                .map(|range| KeyRange {
-                    base_range_uuid: range.base_range_uuid.clone(),
-                    lower_bound_inclusive: range.lower_bound_inclusive.clone(),
-                    upper_bound_exclusive: range.upper_bound_exclusive.clone(),
-                })
-                .collect(),
+            original.secondary_zones.clone(),
+            original.base_key_ranges.clone(),
+            original.secondary_key_ranges.clone(),
         );
         let roundtrip = serialized.into_keyspace_info();
         assert!(original == roundtrip);
@@ -418,7 +531,9 @@ mod tests {
                     &original.name,
                     &original.namespace,
                     original.primary_zone.clone().unwrap(),
+                    original.secondary_zones.clone(),
                     base_key_range_requests,
+                    original.secondary_key_ranges.clone(),
                 )
                 .await
                 .unwrap();
@@ -463,7 +578,9 @@ mod tests {
                 &keyspace.name,
                 &keyspace.namespace,
                 keyspace.primary_zone.unwrap(),
+                keyspace.secondary_zones,
                 keyspace.base_key_ranges,
+                keyspace.secondary_key_ranges,
             )
             .await;
         assert!(matches!(result, Err(Error::KeyspaceAlreadyExists)));

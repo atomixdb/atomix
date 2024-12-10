@@ -58,6 +58,21 @@ impl<S: Storage> Universe for UniverseServer<S> {
             base_key_ranges
         };
 
+        // Secondary key ranges are the same as base key ranges.
+        // We create a set of secondary key ranges for each secondary zone.
+        let secondary_key_ranges = req_inner
+            .secondary_zones
+            .iter()
+            .flat_map(|zone| {
+                base_key_ranges
+                    .iter()
+                    .map(|kr| proto::universe::ZonedKeyRange {
+                        zone: Some(zone.clone()),
+                        key_range: Some(kr.clone()),
+                    })
+            })
+            .collect();
+
         let keyspace_id = self
             .storage
             .create_keyspace(
@@ -65,7 +80,13 @@ impl<S: Storage> Universe for UniverseServer<S> {
                 &req_inner.name,
                 &req_inner.namespace,
                 req_inner.primary_zone.unwrap(),
+                req_inner
+                    .secondary_zones
+                    .into_iter()
+                    .map(|zone| zone)
+                    .collect(),
                 base_key_ranges,
+                secondary_key_ranges,
             )
             .await
             .map_err(|e| Status::internal(format!("Failed to create keyspace: {}", e)))?;

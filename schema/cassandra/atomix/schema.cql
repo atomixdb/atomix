@@ -86,12 +86,19 @@ CREATE TYPE key_range (
   upper_bound_exclusive    blob
 );
 
+CREATE TYPE zoned_key_range (
+  zone                   frozen<zone>,
+  key_range              frozen<key_range>
+);
+
 CREATE TABLE keyspaces (
-    keyspace_id         uuid,
-    namespace           text,
-    name                text,
-    primary_zone        zone,
-    base_key_ranges     list<frozen<key_range>>,
+    keyspace_id          uuid,
+    namespace            text,
+    name                 text,
+    primary_zone         zone,
+    secondary_zones      list<frozen<zone>>,
+    base_key_ranges      list<frozen<key_range>>,
+    secondary_key_ranges list<frozen<zoned_key_range>>,
     PRIMARY KEY ((namespace), name)
 ) WITH COMPACTION = {
     'class': 'org.apache.cassandra.db.compaction.LeveledCompactionStrategy'

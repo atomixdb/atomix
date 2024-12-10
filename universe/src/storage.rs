@@ -1,6 +1,6 @@
 use proto::universe::{
     get_keyspace_info_request::KeyspaceInfoSearchField as ProtoKeyspaceInfoSearchField, KeyRange,
-    Keyspace, KeyspaceInfo, Zone,
+    Keyspace, KeyspaceInfo, Zone, ZonedKeyRange,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -59,7 +59,9 @@ pub trait Storage: Send + Sync + 'static {
         name: &str,
         namespace: &str,
         primary_zone: Zone,
+        secondary_zones: Vec<Zone>,
         base_key_ranges: Vec<KeyRange>,
+        secondary_key_ranges: Vec<ZonedKeyRange>,
     ) -> impl std::future::Future<Output = Result<String, Error>> + Send;
 
     fn list_keyspaces(

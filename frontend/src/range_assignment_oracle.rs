@@ -121,11 +121,13 @@ mod tests {
             name: name,
             namespace: namespace,
             primary_zone: Some(make_zone()),
+            secondary_zones: vec![],
             base_key_ranges: vec![ProtoKeyRange {
                 lower_bound_inclusive: vec![0],
                 upper_bound_exclusive: vec![10],
                 base_range_uuid: Uuid::new_v4().to_string(),
             }],
+            secondary_key_ranges: vec![],
         }
     }
 

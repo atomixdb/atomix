@@ -1,5 +1,8 @@
 use once_cell::sync::Lazy;
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    vec,
+};
 use tonic::{Request, Response, Status};
 
 use common::config::Config;
@@ -54,7 +57,9 @@ impl Universe for MockUniverse {
             namespace: req_inner.namespace,
             name: req_inner.name,
             primary_zone: req_inner.primary_zone,
+            secondary_zones: req_inner.secondary_zones,
             base_key_ranges,
+            secondary_key_ranges: vec![],
         };
         self.keyspaces_info
             .lock()
