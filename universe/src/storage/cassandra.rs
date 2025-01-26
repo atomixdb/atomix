@@ -252,7 +252,8 @@ impl Storage for Cassandra {
                     keyspace
                         .primary_zone
                         .as_ref()
-                        .and_then(|zone| zone.region.as_ref()) == Some(&filter_region)
+                        .and_then(|zone| zone.region.as_ref())
+                        == Some(&filter_region)
                 })
                 .collect()
         } else {

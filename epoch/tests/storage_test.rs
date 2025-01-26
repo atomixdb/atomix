@@ -177,7 +177,7 @@ async fn epoch_increases_monotonically(mut storage: StorageTestCase) {
     }
     // The epoch shouldn't have changed.
     assert_eq!(storage.read_latest().await.unwrap(), 1);
-    
+
     storage.teardown().await;
 }
 

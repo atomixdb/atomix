@@ -106,7 +106,7 @@ where
             'outer: loop {
                 if cancellation_token.is_cancelled() {
                     info!("Update loop cancelled, exiting.");
-                    return ;
+                    return;
                 }
                 info!("Starting an update epoch iteration.");
                 let read_result = server.storage.read_latest().await;
@@ -138,7 +138,10 @@ where
                         Ok(res) => res,
                     };
                     if let Err(e) = res {
-                        error!("Updating a publisher set failed, abandoning epoch update. Error: {}", e);
+                        error!(
+                            "Updating a publisher set failed, abandoning epoch update. Error: {}",
+                            e
+                        );
                         continue 'outer;
                     };
                 }

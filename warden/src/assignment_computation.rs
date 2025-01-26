@@ -675,10 +675,7 @@ mod tests {
             Ok(_) => info!("Truncated atomix.range_leases"),
             Err(e) => panic!("Failed to truncate atomix.range_leases: {}", e),
         }
-        res = context
-            .session
-            .query("TRUNCATE atomix.range_map", ())
-            .await;
+        res = context.session.query("TRUNCATE atomix.range_map", ()).await;
         match res {
             Ok(_) => info!("Truncated atomix.range_map"),
             Err(e) => panic!("Failed to truncate atomix.range_map: {}", e),

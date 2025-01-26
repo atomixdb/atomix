@@ -311,10 +311,7 @@ pub mod for_testing {
                     .await;
                 let _ = cassandra
                     .session
-                    .query(
-                        "DELETE FROM atomix.records WHERE range_id = ?",
-                        (range_id,),
-                    )
+                    .query("DELETE FROM atomix.records WHERE range_id = ?", (range_id,))
                     .await;
             });
         }

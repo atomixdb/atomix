@@ -9,7 +9,7 @@ use tonic::{transport::Server as TServer, Request, Response, Status as TStatus};
 use common::keyspace_id::KeyspaceId;
 use common::util;
 use common::{
-    config::Config, full_range_id::FullRangeId, host_info::HostInfo,
+    config::Config, constants, full_range_id::FullRangeId, host_info::HostInfo,
     transaction_info::TransactionInfo,
 };
 use flatbuffers::FlatBufferBuilder;
@@ -295,7 +295,7 @@ where
             .await;
         let rm = self.maybe_load_and_get_range(&range_id).await?;
         let tx = self.get_transaction_info(transaction_id).await?;
-        let mut leader_sequence_number: i64 = 0;
+        let mut leader_sequence_number: i64 = constants::UNSET_LEADER_SEQUENCE_NUMBER;
         let mut reads = Vec::new();
 
         // Execute the reads
@@ -313,13 +313,14 @@ where
                         reads.push((key, Some(val)));
                     }
                 };
-                if leader_sequence_number == 0 {
+                if leader_sequence_number == constants::UNSET_LEADER_SEQUENCE_NUMBER {
                     leader_sequence_number = get_result.leader_sequence_number;
                 } else if leader_sequence_number != get_result.leader_sequence_number {
                     // This can happen if the range got loaded and unloaded between gets. A transaction cannot
                     // observe two different leaders for the same range so set the sequence number to an invalid
                     // value so the coordinator knows to abort.
-                    leader_sequence_number = -1;
+                    // TODO(tamer): we can also abort the transaction here and not wait.
+                    leader_sequence_number = constants::INVALID_LEADER_SEQUENCE_NUMBER;
                 }
             }
         }

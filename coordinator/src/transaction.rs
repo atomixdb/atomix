@@ -5,7 +5,7 @@ use std::{
 
 use bytes::Bytes;
 use common::{
-    full_range_id::FullRangeId, keyspace_id::KeyspaceId,
+    constants, full_range_id::FullRangeId, keyspace_id::KeyspaceId,
     membership::range_assignment_oracle::RangeAssignmentOracle, record::Record,
     transaction_info::TransactionInfo,
 };
@@ -60,7 +60,9 @@ impl Transaction {
         // scenarios in which we write different keyspaces if a keyspace is deleted
         // and then another one is created with the same name within the span of the
         // transaction.
-        if let Some(k) = self.resolved_keyspaces.get(keyspace) { return Ok(*k) };
+        if let Some(k) = self.resolved_keyspaces.get(keyspace) {
+            return Ok(*k);
+        };
         // TODO(tamer): implement proper resolution from universe.
         Err(Error::KeyspaceDoesNotExist)
     }
@@ -95,15 +97,14 @@ impl Transaction {
     }
 
     fn get_participant_range(&mut self, range_id: FullRangeId) -> &mut ParticipantRange {
-        self.participant_ranges.entry(range_id).or_insert_with(|| {
-            
-            ParticipantRange {
+        self.participant_ranges
+            .entry(range_id)
+            .or_insert_with(|| ParticipantRange {
                 readset: HashSet::new(),
                 writeset: HashMap::new(),
                 deleteset: HashSet::new(),
                 leader_sequence_number: 0,
-            }
-        });
+            });
         self.participant_ranges.get_mut(&range_id).unwrap()
     }
 
@@ -112,7 +113,9 @@ impl Transaction {
         let full_record_key = self.resolve_full_record_key(keyspace, key.clone()).await?;
         let participant_range = self.get_participant_range(full_record_key.range_id);
         // Read-your-writes.
-        if let Some(v) = participant_range.writeset.get(&key) { return Ok(Some(v.clone())) }
+        if let Some(v) = participant_range.writeset.get(&key) {
+            return Ok(Some(v.clone()));
+        }
         if participant_range.deleteset.contains(&key) {
             return Ok(None);
         }
@@ -128,10 +131,13 @@ impl Transaction {
             .unwrap();
         let participant_range = self.get_participant_range(full_record_key.range_id);
         let current_range_leader_seq_num = get_result.leader_sequence_number;
-        if participant_range.leader_sequence_number == 0 {
-            participant_range.leader_sequence_number = current_range_leader_seq_num;
+        if current_range_leader_seq_num != constants::INVALID_LEADER_SEQUENCE_NUMBER
+            && participant_range.leader_sequence_number
+                == constants::UNSET_LEADER_SEQUENCE_NUMBER as u64
+        {
+            participant_range.leader_sequence_number = current_range_leader_seq_num as u64;
         };
-        if current_range_leader_seq_num != participant_range.leader_sequence_number {
+        if current_range_leader_seq_num != participant_range.leader_sequence_number as i64 {
             let _ = self.record_abort().await;
             return Err(Error::TransactionAborted(
                 TransactionAbortReason::RangeLeadershipChanged,
@@ -201,7 +207,6 @@ impl Transaction {
             State::Aborted => return Ok(()),
             _ => {
                 self.check_still_running()?;
-                
             }
         };
         self.record_abort().await

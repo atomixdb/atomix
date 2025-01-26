@@ -124,7 +124,7 @@ impl CassandraWal {
                         log_state.first_offset,
                         self.wal_id,
                         METADATA_OFFSET,
-                        offset
+                        offset,
                     ),
                     (self.wal_id, offset, content, write_id),
                 );
@@ -265,9 +265,8 @@ pub mod tests {
     impl CassandraWal {
         async fn create_test() -> CassandraWal {
             let cassandra = CassandraWal::new("127.0.0.1:9042".to_string(), Uuid::new_v4()).await;
-            let mut query = Query::new(
-                "INSERT INTO atomix.wal (wal_id, offset, next_offset) VALUES (?, ?, ?)",
-            );
+            let mut query =
+                Query::new("INSERT INTO atomix.wal (wal_id, offset, next_offset) VALUES (?, ?, ?)");
             query.set_serial_consistency(Some(SerialConsistency::Serial));
             cassandra
                 .session

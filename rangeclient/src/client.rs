@@ -31,7 +31,7 @@ pub struct PrepareOk {
 #[derive(Debug)]
 pub struct GetResult {
     pub vals: Vec<Option<Bytes>>,
-    pub leader_sequence_number: u64,
+    pub leader_sequence_number: i64,
 }
 
 struct StartedState {
@@ -173,7 +173,7 @@ impl RangeClient {
                 let response_msg =
                     flatbuffers::root::<GetResponse>(envelope.bytes().unwrap().bytes()).unwrap();
                 let () = rangeserver::error::Error::from_flatbuf_status(response_msg.status())?;
-                let leader_sequence_number = response_msg.leader_sequence_number() as u64;
+                let leader_sequence_number = response_msg.leader_sequence_number();
                 let mut result = Vec::new();
                 for record in response_msg.records().iter() {
                     for rec in record.iter() {
