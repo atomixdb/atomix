@@ -15,7 +15,7 @@ use uuid::Uuid;
 /// Provides an async rpc interface to a specific epoch publisher.
 pub struct EpochPublisherClient {
     fast_network: Arc<dyn FastNetwork>,
-    range_server_info: HostInfo,
+    publisher_host_info: HostInfo,
     outstanding_requests: Mutex<HashMap<Uuid, RpcInfo>>,
     timeout_queue: Mutex<BinaryHeap<(DateTime<chrono::Utc>, Uuid)>>,
 }
@@ -48,7 +48,7 @@ impl EpochPublisherClient {
     ) -> Arc<EpochPublisherClient> {
         let pc = Arc::new(EpochPublisherClient {
             fast_network,
-            range_server_info: host_info,
+            publisher_host_info: host_info,
             outstanding_requests: Mutex::new(HashMap::new()),
             timeout_queue: Mutex::new(BinaryHeap::new()),
         });
@@ -74,7 +74,7 @@ impl EpochPublisherClient {
         let req_id = Uuid::new_v4();
         trace!(
             "issuing read_epoch rpc. Epoch Publisher: {:#?}. req_id: {}",
-            self.range_server_info.identity,
+            self.publisher_host_info.identity,
             req_id
         );
 
@@ -98,7 +98,7 @@ impl EpochPublisherClient {
         // Send over the wire.
         let request_bytes = self.create_and_serialize_read_epoch_request(&req_id);
         self.fast_network
-            .send(self.range_server_info.address, request_bytes)
+            .send(self.publisher_host_info.address, request_bytes)
             .unwrap();
 
         // Wait for response.
@@ -137,7 +137,7 @@ impl EpochPublisherClient {
     async fn network_loop(client: Arc<Self>, cancellation_token: CancellationToken) {
         let mut network_receiver = client
             .fast_network
-            .register(client.range_server_info.address);
+            .register(client.publisher_host_info.address);
         loop {
             let () = tokio::select! {
                 () = cancellation_token.cancelled() => {
@@ -164,7 +164,7 @@ impl EpochPublisherClient {
                                 }
                             } else {
                                 error!("Epoch Client received a message with an unknown request id. \
-                                    Epoch Publisher: {:#?}", client.range_server_info.identity)
+                                    Epoch Publisher: {:#?}", client.publisher_host_info.identity)
                             }
                         }
                     }
