@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 bytes = "1.7.2"
+proto = { version = "0.1.0", path = "../proto" }
 common = { version = "0.1.0", path = "../common" }
 epoch_reader = { version = "0.1.0", path = "../epoch_reader" }
 rangeclient = { version = "0.1.0", path = "../rangeclient" }

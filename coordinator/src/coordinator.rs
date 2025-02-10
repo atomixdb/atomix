@@ -11,6 +11,7 @@ use tx_state_store::client::Client as TxStateStoreClient;
 use crate::transaction::Transaction;
 
 pub struct Coordinator {
+    config: Config,
     range_assignment_oracle: Arc<dyn RangeAssignmentOracle>,
     runtime: tokio::runtime::Handle,
     range_client: Arc<crate::rangeclient::RangeClient>,
@@ -50,6 +51,7 @@ impl Coordinator {
             cancellation_token.clone(),
         ));
         Coordinator {
+            config: config.clone(),
             range_assignment_oracle,
             runtime,
             range_client,
@@ -61,6 +63,7 @@ impl Coordinator {
     pub fn start_transaction(&self, transaction_info: Arc<TransactionInfo>) -> Transaction {
         //TODO(tamer): start transaction at the tx_state_store.
         Transaction::new(
+            self.config.clone(),
             transaction_info,
             self.range_client.clone(),
             self.range_assignment_oracle.clone(),

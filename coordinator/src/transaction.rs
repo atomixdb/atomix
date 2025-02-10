@@ -1,17 +1,24 @@
 use std::{
     collections::{HashMap, HashSet},
+    str::FromStr,
     sync::Arc,
 };
 
 use bytes::Bytes;
 use common::{
-    constants, full_range_id::FullRangeId, keyspace_id::KeyspaceId,
+    config::Config, constants, full_range_id::FullRangeId, keyspace_id::KeyspaceId,
     membership::range_assignment_oracle::RangeAssignmentOracle, record::Record,
     transaction_info::TransactionInfo,
 };
 use epoch_reader::reader::EpochReader;
 use tokio::task::JoinSet;
 use uuid::Uuid;
+
+use proto::universe::universe_client::UniverseClient;
+use proto::universe::{
+    get_keyspace_info_request::KeyspaceInfoSearchField, GetKeyspaceInfoRequest,
+    Keyspace as ProtoKeyspace,
+};
 
 use crate::{
     error::{Error, TransactionAbortReason},
@@ -36,6 +43,7 @@ struct ParticipantRange {
 }
 
 pub struct Transaction {
+    config: Config,
     id: Uuid,
     transaction_info: Arc<TransactionInfo>,
     state: State,
@@ -55,7 +63,7 @@ pub struct FullRecordKey {
 }
 
 impl Transaction {
-    async fn resolve_keyspace(&self, keyspace: &Keyspace) -> Result<KeyspaceId, Error> {
+    async fn resolve_keyspace(&mut self, keyspace: &Keyspace) -> Result<KeyspaceId, Error> {
         // Keyspace name to id must be stable within the same transaction, to avoid
         // scenarios in which we write different keyspaces if a keyspace is deleted
         // and then another one is created with the same name within the span of the
@@ -64,11 +72,36 @@ impl Transaction {
             return Ok(*k);
         };
         // TODO(tamer): implement proper resolution from universe.
-        Err(Error::KeyspaceDoesNotExist)
+        let proto_server_addr = &self.config.universe.proto_server_addr;
+        let mut client = UniverseClient::connect(format!("http://{}", proto_server_addr))
+            .await
+            .map_err(|e| Error::InternalError(Arc::new(e)))?;
+
+        let keyspace_info_request = GetKeyspaceInfoRequest {
+            keyspace_info_search_field: Some(KeyspaceInfoSearchField::Keyspace(ProtoKeyspace {
+                namespace: keyspace.namespace.clone(),
+                name: keyspace.name.clone(),
+            })),
+        };
+
+        let keyspace_info_response = client
+            .get_keyspace_info(keyspace_info_request)
+            .await
+            .map_err(|e| Error::InternalError(Arc::new(e)))?;
+
+        let keyspace_info = keyspace_info_response
+            .into_inner()
+            .keyspace_info
+            .ok_or(Error::KeyspaceDoesNotExist)?;
+
+        let keyspace_id = KeyspaceId::from_str(&keyspace_info.keyspace_id).unwrap();
+        self.resolved_keyspaces
+            .insert(keyspace.clone(), keyspace_id);
+        Ok(keyspace_id)
     }
 
     async fn resolve_full_record_key(
-        &self,
+        &mut self,
         keyspace: &Keyspace,
         key: Bytes,
     ) -> Result<FullRecordKey, Error> {
@@ -319,6 +352,7 @@ impl Transaction {
     }
 
     pub(crate) fn new(
+        config: Config,
         transaction_info: Arc<TransactionInfo>,
         range_client: Arc<RangeClient>,
         range_assignment_oracle: Arc<dyn RangeAssignmentOracle>,
@@ -327,6 +361,7 @@ impl Transaction {
         runtime: tokio::runtime::Handle,
     ) -> Transaction {
         Transaction {
+            config,
             id: transaction_info.id,
             transaction_info,
             state: State::Running,
