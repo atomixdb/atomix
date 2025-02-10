@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["common", "coordinator", "epoch", "epoch_publisher", "epoch_reader", "flatbuf", "proto", "rangeclient", "rangeserver", "tx_state_store", "warden", "universe"]
+members = ["common", "coordinator", "epoch", "epoch_publisher", "epoch_reader", "flatbuf", "proto", "rangeclient", "rangeserver", "tx_state_store", "warden", "universe", "frontend"]
 
 [workspace.dependencies]
 test-case = "3"
