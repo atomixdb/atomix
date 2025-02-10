@@ -569,8 +569,7 @@ where
 #[cfg(test)]
 mod tests {
     use common::config::{
-        CassandraConfig, EpochConfig, HostPort, RangeServerConfig, FrontendConfig,
-        UniverseConfig,
+        CassandraConfig, EpochConfig, FrontendConfig, HostPort, RangeServerConfig, UniverseConfig,
     };
     use common::transaction_info::TransactionInfo;
     use common::util;

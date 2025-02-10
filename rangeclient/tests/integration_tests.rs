@@ -10,8 +10,8 @@ use tokio_util::sync::CancellationToken;
 
 use common::{
     config::{
-        CassandraConfig, Config, EpochConfig, HostPort, RangeServerConfig, RegionConfig,
-        FrontendConfig, UniverseConfig,
+        CassandraConfig, Config, EpochConfig, FrontendConfig, HostPort, RangeServerConfig,
+        RegionConfig, UniverseConfig,
     },
     full_range_id::FullRangeId,
     host_info::{HostIdentity, HostInfo},

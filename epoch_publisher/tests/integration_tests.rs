@@ -13,8 +13,8 @@ use tokio_util::sync::CancellationToken;
 
 use common::{
     config::{
-        CassandraConfig, Config, EpochConfig, EpochPublisher as EpochPublisherConfig, HostPort,
-        RangeServerConfig, RegionConfig, FrontendConfig, UniverseConfig,
+        CassandraConfig, Config, EpochConfig, EpochPublisher as EpochPublisherConfig,
+        FrontendConfig, HostPort, RangeServerConfig, RegionConfig, UniverseConfig,
     },
     host_info::{HostIdentity, HostInfo},
     network::{fast_network::FastNetwork, for_testing::udp_fast_network::UdpFastNetwork},

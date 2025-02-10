@@ -742,7 +742,7 @@ pub mod tests {
     use crate::cache::memtabledb::MemTableDB;
     use crate::epoch_supplier::EpochSupplier as Trait;
     use common::config::{
-        CassandraConfig, EpochConfig, HostPort, RangeServerConfig, RegionConfig, FrontendConfig,
+        CassandraConfig, EpochConfig, FrontendConfig, HostPort, RangeServerConfig, RegionConfig,
         UniverseConfig,
     };
     use common::host_info::HostIdentity;
