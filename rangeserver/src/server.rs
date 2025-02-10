@@ -742,7 +742,8 @@ pub mod tests {
     use crate::cache::memtabledb::MemTableDB;
     use crate::epoch_supplier::EpochSupplier as Trait;
     use common::config::{
-        CassandraConfig, EpochConfig, HostPort, RangeServerConfig, RegionConfig, UniverseConfig,
+        CassandraConfig, EpochConfig, HostPort, RangeServerConfig, RegionConfig, FrontendConfig,
+        UniverseConfig,
     };
     use common::host_info::HostIdentity;
     use common::network::for_testing::udp_fast_network::UdpFastNetwork;
@@ -813,6 +814,11 @@ pub mod tests {
             },
             universe: UniverseConfig {
                 proto_server_addr: "127.0.0.1:123".parse().unwrap(),
+            },
+            frontend: FrontendConfig {
+                proto_server_addr: HostPort::from_str("127.0.0.1:50056").unwrap(),
+                fast_network_addr: HostPort::from_str("127.0.0.1:50057").unwrap(),
+                transaction_overall_timeout: time::Duration::from_secs(10),
             },
             cassandra: CassandraConfig {
                 cql_addr: "127.0.0.1:9042".parse().unwrap(),

@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use common::{
     config::{
         CassandraConfig, Config, EpochConfig, HostPort, RangeServerConfig, RegionConfig,
-        UniverseConfig,
+        FrontendConfig, UniverseConfig,
     },
     full_range_id::FullRangeId,
     host_info::{HostIdentity, HostInfo},
@@ -60,6 +60,11 @@ fn get_config(warden_address: HostPort) -> Config {
         },
         universe: UniverseConfig {
             proto_server_addr: "127.0.0.1:123".parse().unwrap(),
+        },
+        frontend: FrontendConfig {
+            proto_server_addr: "127.0.0.1:124".parse().unwrap(),
+            fast_network_addr: HostPort::from_str("127.0.0.1:125").unwrap(),
+            transaction_overall_timeout: time::Duration::from_secs(10),
         },
         cassandra: CassandraConfig {
             cql_addr: "127.0.0.1:9042".parse().unwrap(),

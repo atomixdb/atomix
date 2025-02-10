@@ -569,7 +569,8 @@ where
 #[cfg(test)]
 mod tests {
     use common::config::{
-        CassandraConfig, EpochConfig, HostPort, RangeServerConfig, UniverseConfig,
+        CassandraConfig, EpochConfig, HostPort, RangeServerConfig, FrontendConfig,
+        UniverseConfig,
     };
     use common::transaction_info::TransactionInfo;
     use common::util;
@@ -725,6 +726,11 @@ mod tests {
             },
             universe: UniverseConfig {
                 proto_server_addr: "127.0.0.1:123".parse().unwrap(),
+            },
+            frontend: FrontendConfig {
+                proto_server_addr: "127.0.0.1:124".parse().unwrap(),
+                fast_network_addr: HostPort::from_str("127.0.0.1:125").unwrap(),
+                transaction_overall_timeout: time::Duration::from_secs(10),
             },
             cassandra: CassandraConfig {
                 cql_addr: HostPort {
