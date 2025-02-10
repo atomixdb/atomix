@@ -4,6 +4,7 @@ package universe;
 service Universe {
     rpc CreateKeyspace (CreateKeyspaceRequest) returns (CreateKeyspaceResponse);
     rpc ListKeyspaces (ListKeyspacesRequest) returns (ListKeyspacesResponse);
+    rpc GetKeyspaceInfo (GetKeyspaceInfoRequest) returns (GetKeyspaceInfoResponse);
 }
 
 enum Cloud {
@@ -62,4 +63,19 @@ message ListKeyspacesRequest {
 
 message ListKeyspacesResponse {
     repeated KeyspaceInfo keyspaces = 1;
+}
+
+message Keyspace {
+    string namespace = 1;
+    string name = 2;
+}
+message GetKeyspaceInfoRequest {
+    oneof keyspace_info_search_field {
+        Keyspace keyspace = 1;
+        string keyspace_id = 2;
+    }
+}
+
+message GetKeyspaceInfoResponse {
+    KeyspaceInfo keyspace_info = 1;
 }

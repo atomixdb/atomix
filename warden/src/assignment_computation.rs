@@ -457,7 +457,8 @@ mod tests {
     use once_cell::sync::Lazy;
     use proto::universe::{
         universe_server::{Universe, UniverseServer},
-        CreateKeyspaceRequest, CreateKeyspaceResponse, KeyspaceInfo, ListKeyspacesResponse,
+        CreateKeyspaceRequest, CreateKeyspaceResponse, GetKeyspaceInfoRequest,
+        GetKeyspaceInfoResponse, KeyspaceInfo, ListKeyspacesResponse,
     };
     use scylla::{Session, SessionBuilder};
     use tokio::sync::oneshot;
@@ -555,6 +556,13 @@ mod tests {
                         .collect(),
                 }],
             }))
+        }
+
+        async fn get_keyspace_info(
+            &self,
+            _request: Request<GetKeyspaceInfoRequest>,
+        ) -> Result<Response<GetKeyspaceInfoResponse>, Status> {
+            unreachable!()
         }
     }
 

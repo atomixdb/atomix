@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use proto::universe::universe_server::Universe;
 use proto::universe::{
-    CreateKeyspaceRequest, CreateKeyspaceResponse, ListKeyspacesRequest, ListKeyspacesResponse,
+    CreateKeyspaceRequest, CreateKeyspaceResponse, GetKeyspaceInfoRequest, GetKeyspaceInfoResponse,
+    ListKeyspacesRequest, ListKeyspacesResponse,
 };
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 use uuid::Uuid;
 
-use crate::storage::Storage;
+use crate::storage::{KeyspaceInfoSearchField, Storage};
 
 /// Implementation of the Universe manager.
 pub struct UniverseServer<S: Storage> {
@@ -87,6 +88,28 @@ impl<S: Storage> Universe for UniverseServer<S> {
             .map_err(|e| Status::internal(format!("Failed to list keyspaces: {}", e)))?;
 
         let response = ListKeyspacesResponse { keyspaces };
+        Ok(Response::new(response))
+    }
+
+    #[instrument(skip(self))]
+    async fn get_keyspace_info(
+        &self,
+        request: Request<GetKeyspaceInfoRequest>,
+    ) -> Result<Response<GetKeyspaceInfoResponse>, Status> {
+        info!("Got a get_keyspace_info request: {:?}", request);
+
+        let req_inner = request.into_inner();
+        let keyspace_info_search_field =
+            KeyspaceInfoSearchField::from(req_inner.keyspace_info_search_field.unwrap());
+        let keyspace_info = self
+            .storage
+            .get_keyspace_info(keyspace_info_search_field)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get keyspace info: {}", e)))?;
+
+        let response = GetKeyspaceInfoResponse {
+            keyspace_info: Some(keyspace_info),
+        };
         Ok(Response::new(response))
     }
 }

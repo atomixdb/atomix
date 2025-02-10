@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use proto::universe::{
-    universe_client::UniverseClient, CreateKeyspaceRequest, ListKeyspacesRequest,
+    get_keyspace_info_request::KeyspaceInfoSearchField, universe_client::UniverseClient,
+    CreateKeyspaceRequest, GetKeyspaceInfoRequest, Keyspace, ListKeyspacesRequest,
 };
 use tokio::time::sleep;
 use universe::{server::run_universe_server, storage::cassandra::Cassandra};
@@ -10,7 +11,6 @@ use uuid::Uuid;
 #[tokio::test]
 async fn test_create_and_list_keyspace_handlers() {
     let addr = "127.0.0.1:50056";
-
     // Create a Cassandra CQL session
     let storage = Cassandra::new("127.0.0.1:9042".to_string()).await;
 
@@ -68,6 +68,42 @@ async fn test_create_and_list_keyspace_handlers() {
     // Check that the keyspace we created is in the list
     assert!(keyspaces.iter().any(|k| k.keyspace_id == keyspace_id));
 
-    // Stop the server
+    // Get the keyspace info by keyspace_id
+    let keyspace_info_request = GetKeyspaceInfoRequest {
+        keyspace_info_search_field: Some(KeyspaceInfoSearchField::KeyspaceId(keyspace_id)),
+    };
+
+    let keyspace_info = client
+        .get_keyspace_info(keyspace_info_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .keyspace_info
+        .unwrap();
+
+    // Check that the keyspace info we got is the same as the one we created
+    assert_eq!(keyspace_info.name, keyspace_name);
+    assert_eq!(keyspace_info.namespace, namespace);
+
+    //  Get the keyspace info by Keyspace
+    let keyspace_info_request = GetKeyspaceInfoRequest {
+        keyspace_info_search_field: Some(KeyspaceInfoSearchField::Keyspace(Keyspace {
+            namespace: namespace.to_string(),
+            name: keyspace_name.to_string(),
+        })),
+    };
+
+    let keyspace_info = client
+        .get_keyspace_info(keyspace_info_request)
+        .await
+        .unwrap()
+        .into_inner()
+        .keyspace_info
+        .unwrap();
+
+    // Check that the keyspace info we got is the same as the one we created
+    assert_eq!(keyspace_info.name, keyspace_name);
+    assert_eq!(keyspace_info.namespace, namespace);
+
     server_task.abort();
 }

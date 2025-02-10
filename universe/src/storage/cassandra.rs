@@ -28,6 +28,20 @@ static LIST_KEYSPACES_QUERY: &str = r#"
     FROM atomix.keyspaces
 "#;
 
+static GET_KEYSPACE_INFO_BY_KEYSPACE_QUERY: &str = r#"
+    SELECT keyspace_id, name, namespace, primary_zone, base_key_ranges
+    FROM atomix.keyspaces
+    WHERE namespace = ? AND name = ?
+"#;
+
+//  TODO(kelly): Add ALLOW FILTERING is bad - discuss whether we will ever need to query by KeyspaceId in practice
+//  and create an index on the field if so.
+static GET_KEYSPACE_INFO_BY_KEYSPACE_ID_QUERY: &str = r#"
+    SELECT keyspace_id, name, namespace, primary_zone, base_key_ranges
+    FROM atomix.keyspaces
+    WHERE keyspace_id = ? ALLOW FILTERING
+"#;
+
 // TODO: Similar to tx_state_store. We should move this to a common location.
 fn get_serial_query(query_text: impl Into<String>) -> Query {
     let mut query = Query::new(query_text);
@@ -261,6 +275,45 @@ impl Storage for Cassandra {
         };
 
         Ok(filtered_keyspaces)
+    }
+
+    async fn get_keyspace_info(
+        &self,
+        keyspace_info_search_field: KeyspaceInfoSearchField,
+    ) -> Result<KeyspaceInfo, Error> {
+        // Execute the query
+        let rows = match keyspace_info_search_field {
+            KeyspaceInfoSearchField::Keyspace { namespace, name } => {
+                let query = get_serial_query(GET_KEYSPACE_INFO_BY_KEYSPACE_QUERY);
+                self.session
+                    .query_unpaged(query, (namespace, name))
+                    .await
+                    .map_err(scylla_query_error_to_storage_error)?
+                    .rows
+                    .unwrap_or_default()
+            }
+            KeyspaceInfoSearchField::KeyspaceId(keyspace_id) => {
+                let query = get_serial_query(GET_KEYSPACE_INFO_BY_KEYSPACE_ID_QUERY);
+                self.session
+                    .query_unpaged(query, (Uuid::from_str(keyspace_id.as_str()).unwrap(),))
+                    .await
+                    .map_err(scylla_query_error_to_storage_error)?
+                    .rows
+                    .unwrap_or_default()
+            }
+        };
+
+        if rows.is_empty() {
+            return Err(Error::KeyspaceDoesNotExist);
+        }
+
+        if let Some(first_row) = rows.into_iter().next() {
+            let serialized = first_row.into_typed::<SerializedKeyspaceInfo>();
+            let keyspace_info = serialized.unwrap().into_keyspace_info();
+            Ok(keyspace_info)
+        } else {
+            Err(Error::KeyspaceDoesNotExist)
+        }
     }
 }
 
