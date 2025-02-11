@@ -362,6 +362,7 @@ dependencies = [
  "strum",
  "tokio",
  "tokio-util",
+ "tonic",
  "tx_state_store",
  "uuid 1.10.0",
 ]

@@ -6,19 +6,18 @@ use std::{
 
 use bytes::Bytes;
 use common::{
-    config::Config, constants, full_range_id::FullRangeId, keyspace_id::KeyspaceId,
+    constants, full_range_id::FullRangeId, keyspace_id::KeyspaceId,
     membership::range_assignment_oracle::RangeAssignmentOracle, record::Record,
     transaction_info::TransactionInfo,
 };
 use epoch_reader::reader::EpochReader;
-use tokio::task::JoinSet;
-use uuid::Uuid;
-
 use proto::universe::universe_client::UniverseClient;
 use proto::universe::{
     get_keyspace_info_request::KeyspaceInfoSearchField, GetKeyspaceInfoRequest,
     Keyspace as ProtoKeyspace,
 };
+use tokio::task::JoinSet;
+use uuid::Uuid;
 
 use crate::{
     error::{Error, TransactionAbortReason},
@@ -43,9 +42,9 @@ struct ParticipantRange {
 }
 
 pub struct Transaction {
-    config: Config,
     id: Uuid,
     transaction_info: Arc<TransactionInfo>,
+    universe_client: UniverseClient<tonic::transport::Channel>,
     state: State,
     participant_ranges: HashMap<FullRangeId, ParticipantRange>,
     resolved_keyspaces: HashMap<Keyspace, KeyspaceId>,
@@ -72,11 +71,6 @@ impl Transaction {
             return Ok(*k);
         };
         // TODO(tamer): implement proper resolution from universe.
-        let proto_server_addr = &self.config.universe.proto_server_addr;
-        let mut client = UniverseClient::connect(format!("http://{}", proto_server_addr))
-            .await
-            .map_err(|e| Error::InternalError(Arc::new(e)))?;
-
         let keyspace_info_request = GetKeyspaceInfoRequest {
             keyspace_info_search_field: Some(KeyspaceInfoSearchField::Keyspace(ProtoKeyspace {
                 namespace: keyspace.namespace.clone(),
@@ -84,7 +78,8 @@ impl Transaction {
             })),
         };
 
-        let keyspace_info_response = client
+        let keyspace_info_response = self
+            .universe_client
             .get_keyspace_info(keyspace_info_request)
             .await
             .map_err(|e| Error::InternalError(Arc::new(e)))?;
@@ -352,8 +347,8 @@ impl Transaction {
     }
 
     pub(crate) fn new(
-        config: Config,
         transaction_info: Arc<TransactionInfo>,
+        universe_client: UniverseClient<tonic::transport::Channel>,
         range_client: Arc<RangeClient>,
         range_assignment_oracle: Arc<dyn RangeAssignmentOracle>,
         epoch_reader: Arc<EpochReader>,
@@ -361,9 +356,9 @@ impl Transaction {
         runtime: tokio::runtime::Handle,
     ) -> Transaction {
         Transaction {
-            config,
             id: transaction_info.id,
             transaction_info,
+            universe_client,
             state: State::Running,
             participant_ranges: HashMap::new(),
             resolved_keyspaces: HashMap::new(),
