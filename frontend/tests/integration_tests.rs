@@ -22,7 +22,9 @@ use frontend::{frontend::Server, range_assignment_oracle::RangeAssignmentOracle}
 use tracing::info;
 
 use proto::frontend::frontend_client::FrontendClient;
-use proto::frontend::{GetRequest, Keyspace as ProtoKeyspace, PutRequest, StartTransactionRequest};
+use proto::frontend::{
+    CommitRequest, GetRequest, Keyspace as ProtoKeyspace, PutRequest, StartTransactionRequest,
+};
 use proto::universe::{CreateKeyspaceRequest, KeyRangeRequest, Zone as ProtoZone};
 
 static RUNTIME: Lazy<tokio::runtime::Runtime> =
@@ -94,7 +96,11 @@ async fn setup() -> TestContext {
     let frontend_addr = config.frontend.proto_server_addr.to_string().clone();
 
     //  Start the mock epoch publisher
-    MockEpochPublisher::start(&config).await.unwrap();
+    //  Start as many MockEpochPublishers as there are epoch publishers in the config
+    for publisher in config.regions.get(&zone.region).unwrap().epoch_publishers.iter() {
+        let fast_network_addr = publisher.publishers.iter().next().unwrap().fast_network_addr.clone();
+        MockEpochPublisher::start(fast_network_addr.to_string(), CancellationToken::new()).await.unwrap();
+    }
     //  Start the mock range server
     // MockRangeServer::start(&config).await;
 
@@ -193,7 +199,6 @@ async fn test_frontend() {
         })
         .await
         .unwrap();
-    println!("Put key-value pair into keyspace");
 
     // ----- Get value from keyspace, key -----
     let value = context
@@ -211,6 +216,11 @@ async fn test_frontend() {
     println!("Value: {:?}", value);
 
     // // ----- Commit transaction -----
-    // // Commit transaction
-    // client.commit(transaction_id).await.unwrap();
+    // context
+    //     .client
+    //     .commit(CommitRequest {
+    //         transaction_id: transaction_id.to_string(),
+    //     })
+    //     .await
+    //     .unwrap();
 }

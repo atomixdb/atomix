@@ -595,6 +595,8 @@ dependencies = [
  "chrono",
  "common",
  "coordinator",
+ "flatbuf",
+ "flatbuffers",
  "once_cell",
  "portpicker",
  "prost",
