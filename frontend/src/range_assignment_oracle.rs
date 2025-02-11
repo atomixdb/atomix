@@ -77,7 +77,6 @@ mod tests {
         GetKeyspaceInfoResponse, KeyRange as ProtoKeyRange, KeyspaceInfo, ListKeyspacesRequest,
         ListKeyspacesResponse, Region as ProtoRegion, Zone as ProtoZone,
     };
-    use scylla::{Session, SessionBuilder};
     use std::sync::{Arc, Mutex};
     use tokio::sync::oneshot;
     use tokio_util::sync::CancellationToken;
@@ -163,8 +162,6 @@ mod tests {
         range_assignment_oracle: Arc<RangeAssignmentOracle>,
         server_shutdown_tx: Option<oneshot::Sender<()>>,
         keyspaces_info: Arc<Mutex<Vec<KeyspaceInfo>>>,
-        session: Arc<Session>,
-        cancellation_token: CancellationToken,
     }
 
     impl Drop for TestContext {
@@ -177,11 +174,9 @@ mod tests {
     async fn setup() -> TestContext {
         let port = portpicker::pick_unused_port().unwrap();
         let addr = format!("[::1]:{port}").parse().unwrap();
-        let cancellation_token = CancellationToken::new();
         let (signal_tx, signal_rx) = oneshot::channel();
         let keyspaces_info = Arc::new(Mutex::new(vec![]));
         let keyspaces_info_clone = keyspaces_info.clone();
-        let cc_clone = cancellation_token.clone();
         RUNTIME.spawn(async move {
             let universe_server = MockUniverseService {
                 keyspaces_info: keyspaces_info_clone,
@@ -190,7 +185,6 @@ mod tests {
                 .add_service(UniverseServer::new(universe_server))
                 .serve_with_shutdown(addr, async {
                     signal_rx.await.ok();
-                    cancellation_token.cancel();
                     info!("Server shutting down");
                 })
                 .await
@@ -213,21 +207,12 @@ mod tests {
                 }
             }
         }
-        let session = Arc::new(
-            SessionBuilder::new()
-                .known_node("127.0.0.1:9042".to_string())
-                .build()
-                .await
-                .unwrap(),
-        );
 
         let range_assignment_oracle = Arc::new(RangeAssignmentOracle::new(client));
         TestContext {
             range_assignment_oracle,
             server_shutdown_tx: Some(signal_tx),
             keyspaces_info,
-            session,
-            cancellation_token: cc_clone,
         }
     }
 
