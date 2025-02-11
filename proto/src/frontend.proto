@@ -36,8 +36,8 @@ message GetResponse {
 message PutRequest {
     string transaction_id = 1;
     Keyspace keyspace = 2;
-    bytes key = 4;
-    bytes value = 5;
+    bytes key = 3;
+    bytes value = 4;
 }
 
 message PutResponse {

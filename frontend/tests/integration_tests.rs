@@ -4,11 +4,9 @@ use common::config::{
     RangeServerConfig, RegionConfig, UniverseConfig,
 };
 use common::network::for_testing::udp_fast_network::UdpFastNetwork;
-use common::{
-    key_range::KeyRange,
-    region::{Region, Zone},
-};
+use common::region::{Region, Zone};
 use std::time;
+use uuid::Uuid;
 
 use coordinator::keyspace::Keyspace;
 use once_cell::sync::Lazy;
@@ -20,17 +18,21 @@ use tokio_util::sync::CancellationToken;
 use frontend::for_testing::{
     mock_epoch_publisher::MockEpochPublisher, mock_universe::MockUniverse,
 };
-use frontend::{client::Client, frontend::Server, range_assignment_oracle::RangeAssignmentOracle};
+use frontend::{frontend::Server, range_assignment_oracle::RangeAssignmentOracle};
 use tracing::info;
+
+use proto::frontend::frontend_client::FrontendClient;
+use proto::frontend::{GetRequest, Keyspace as ProtoKeyspace, PutRequest, StartTransactionRequest};
+use proto::universe::{CreateKeyspaceRequest, KeyRangeRequest, Zone as ProtoZone};
 
 static RUNTIME: Lazy<tokio::runtime::Runtime> =
     Lazy::new(|| tokio::runtime::Runtime::new().unwrap());
 
 struct TestContext {
     keyspace: Keyspace,
-    base_key_ranges: Vec<KeyRange>,
-    zone: Zone,
-    client: Arc<Client>,
+    zone: ProtoZone,
+    base_key_ranges: Vec<KeyRangeRequest>,
+    client: FrontendClient<tonic::transport::Channel>,
 }
 
 fn make_zone() -> Zone {
@@ -92,7 +94,7 @@ async fn setup() -> TestContext {
     let frontend_addr = config.frontend.proto_server_addr.to_string().clone();
 
     //  Start the mock epoch publisher
-    // MockEpochPublisher::start(&config).await;
+    MockEpochPublisher::start(&config).await.unwrap();
     //  Start the mock range server
     // MockRangeServer::start(&config).await;
 
@@ -119,9 +121,9 @@ async fn setup() -> TestContext {
         Server::start(server).await;
     });
 
-    let client: Arc<Client>;
+    let client: FrontendClient<tonic::transport::Channel>;
     loop {
-        let client_result = Client::new(frontend_addr.clone()).await;
+        let client_result = FrontendClient::connect(format!("http://{}", frontend_addr)).await;
         match client_result {
             Ok(client_ok) => {
                 client = client_ok;
@@ -137,44 +139,78 @@ async fn setup() -> TestContext {
         namespace: "test".to_string(),
         name: "bubbles".to_string(),
     };
-    let base_key_ranges = vec![KeyRange {
-        lower_bound_inclusive: Some(Bytes::from_static(b"A")),
-        upper_bound_exclusive: Some(Bytes::from_static(b"Z")),
+    let key_range_requests = vec![KeyRangeRequest {
+        lower_bound_inclusive: vec![0],
+        upper_bound_exclusive: vec![10],
     }];
 
     TestContext {
-        client,
         keyspace,
-        base_key_ranges,
-        zone,
+        zone: ProtoZone::from(zone),
+        base_key_ranges: key_range_requests,
+        client,
     }
 }
 
 #[tokio::test]
 async fn test_frontend() {
-    let context = setup().await;
-    let mut client = Arc::into_inner(context.client).unwrap();
+    let mut context = setup().await;
 
-    // Create keyspace
-    client
-        .create_keyspace(&context.keyspace, context.zone, context.base_key_ranges)
+    // ----- Create keyspace -----
+    let response = context
+        .client
+        .create_keyspace(CreateKeyspaceRequest {
+            namespace: context.keyspace.namespace.clone(),
+            name: context.keyspace.name.clone(),
+            primary_zone: Some(context.zone.into()),
+            base_key_ranges: context.base_key_ranges,
+        })
         .await
         .unwrap();
+    let keyspace_id = response.get_ref().keyspace_id.clone();
+    println!("Created keyspace with ID: {:?}", keyspace_id);
+
+    // ----- Start transaction -----
+    let response = context
+        .client
+        .start_transaction(StartTransactionRequest {})
+        .await
+        .unwrap();
+    let transaction_id = Uuid::parse_str(&response.get_ref().transaction_id).unwrap();
+    println!("Started transaction with ID: {:?}", transaction_id);
+
+    // ----- Put key-value pair into keyspace -----
+    context
+        .client
+        .put(PutRequest {
+            transaction_id: transaction_id.to_string(),
+            keyspace: Some(ProtoKeyspace {
+                namespace: context.keyspace.namespace.clone(),
+                name: context.keyspace.name.clone(),
+            }),
+            key: Bytes::from_static(&[5]).to_vec(),
+            value: Bytes::from_static(b"bubbles").to_vec(),
+        })
+        .await
+        .unwrap();
+    println!("Put key-value pair into keyspace");
+
+    // ----- Get value from keyspace, key -----
+    let value = context
+        .client
+        .get(GetRequest {
+            transaction_id: transaction_id.to_string(),
+            keyspace: Some(ProtoKeyspace {
+                namespace: context.keyspace.namespace.clone(),
+                name: context.keyspace.name.clone(),
+            }),
+            key: Bytes::from_static(&[5]).to_vec(),
+        })
+        .await
+        .unwrap();
+    println!("Value: {:?}", value);
+
+    // // ----- Commit transaction -----
+    // // Commit transaction
+    // client.commit(transaction_id).await.unwrap();
 }
-
-//     // Start transaction
-//     let transaction_id = client.start_transaction().await.unwrap();
-
-//     // Put key-value pair into keyspace
-//     let key = Bytes::from_static(b"E");
-//     let value = Bytes::from_static(b"bubbles");
-
-//     client
-//         .put(transaction_id, &context.keyspace, &key, &value)
-//         .await
-//         .unwrap();
-
-//     // Get value from keyspace
-//     // let value = client.get(transaction_id, &context.keyspace, key).await.unwrap();
-//     // println!("Value: {:?}", value);
-// }
