@@ -1,5 +1,5 @@
-// pub mod client;
-// pub mod error;
+pub mod client;
+pub mod error;
+pub mod for_testing;
+pub mod frontend;
 pub mod range_assignment_oracle;
-// pub mod frontend;
-// pub mod for_testing;

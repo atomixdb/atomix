@@ -2,6 +2,8 @@
 pub mod epoch;
 #[path = "../target/epoch_publisher/epoch_publisher.rs"]
 pub mod epoch_publisher;
+#[path = "../target/frontend/frontend.rs"]
+pub mod frontend;
 #[path = "../target/rangeserver/rangeserver.rs"]
 pub mod rangeserver;
 #[path = "../target/universe/universe.rs"]

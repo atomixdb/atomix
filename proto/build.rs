@@ -55,4 +55,15 @@ fn main() {
             &["src"], // specify the root location to search proto dependencies
         )
         .unwrap();
+
+    let frontend_out_dir = "target/frontend";
+    fs::create_dir_all(frontend_out_dir).unwrap();
+    tonic_build::configure()
+        .build_server(true)
+        .out_dir(frontend_out_dir)
+        .compile(
+            &["src/frontend.proto"],
+            &["src"], // specify the root location to search proto dependencies
+        )
+        .unwrap();
 }

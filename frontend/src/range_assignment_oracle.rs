@@ -79,7 +79,6 @@ mod tests {
     };
     use std::sync::{Arc, Mutex};
     use tokio::sync::oneshot;
-    use tokio_util::sync::CancellationToken;
     use tonic::{Request, Response, Status};
     use tracing::info;
     use uuid::Uuid;

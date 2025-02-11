@@ -18,13 +18,13 @@ use uuid::Uuid;
 static RUNTIME: Lazy<tokio::runtime::Runtime> =
     Lazy::new(|| tokio::runtime::Runtime::new().unwrap());
 
-struct MockUniverseService {
+pub struct MockUniverse {
     keyspaces_info: Arc<Mutex<Vec<KeyspaceInfo>>>,
     server_shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
 #[tonic::async_trait]
-impl Universe for MockUniverseService {
+impl Universe for MockUniverse {
     async fn create_keyspace(
         &self,
         _request: Request<CreateKeyspaceRequest>,
@@ -103,7 +103,7 @@ impl Universe for MockUniverseService {
     }
 }
 
-impl MockUniverseService {
+impl MockUniverse {
     pub async fn start(
         config: &Config,
     ) -> Result<UniverseClient<tonic::transport::Channel>, Status> {
@@ -113,7 +113,7 @@ impl MockUniverseService {
         let keyspaces_info_clone = keyspaces_info.clone();
 
         RUNTIME.spawn(async move {
-            let universe_server = MockUniverseService {
+            let universe_server = MockUniverse {
                 keyspaces_info: keyspaces_info_clone,
                 server_shutdown_tx: Some(signal_tx),
             };
@@ -126,7 +126,6 @@ impl MockUniverseService {
                 })
                 .await
                 .unwrap();
-
             info!("Server task completed");
         });
 
@@ -141,7 +140,7 @@ impl MockUniverseService {
                     break;
                 }
                 Err(e) => {
-                    println!("Failed to connect to universe server: {}", e);
+                    info!("Failed to connect to universe server: {}", e);
                     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
                 }
             }
@@ -150,7 +149,7 @@ impl MockUniverseService {
     }
 }
 
-impl Drop for MockUniverseService {
+impl Drop for MockUniverse {
     fn drop(&mut self) {
         let _ = self.server_shutdown_tx.take().unwrap().send(());
         std::thread::sleep(std::time::Duration::from_millis(5));

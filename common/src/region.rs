@@ -43,6 +43,15 @@ pub struct Zone {
     pub name: String,
 }
 
+impl From<Zone> for proto::universe::Zone {
+    fn from(val: Zone) -> Self {
+        proto::universe::Zone {
+            region: Some(val.region.into()),
+            name: val.name,
+        }
+    }
+}
+
 impl fmt::Display for Cloud {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let str = match self {
