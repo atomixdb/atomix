@@ -16,7 +16,8 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use frontend::for_testing::{
-    mock_epoch_publisher::MockEpochPublisher, mock_universe::MockUniverse,
+    mock_epoch_publisher::MockEpochPublisher, mock_rangeserver::MockRangeServer,
+    mock_universe::MockUniverse,
 };
 use frontend::{frontend::Server, range_assignment_oracle::RangeAssignmentOracle};
 use tracing::info;
@@ -27,8 +28,14 @@ use proto::frontend::{
 };
 use proto::universe::{CreateKeyspaceRequest, KeyRangeRequest, Zone as ProtoZone};
 
-static RUNTIME: Lazy<tokio::runtime::Runtime> =
-    Lazy::new(|| tokio::runtime::Runtime::new().unwrap());
+use common::network::fast_network::FastNetwork;
+
+static RUNTIME: Lazy<tokio::runtime::Runtime> = Lazy::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+});
 
 struct TestContext {
     keyspace: Keyspace,
@@ -49,7 +56,8 @@ fn make_zone() -> Zone {
 
 async fn init_config() -> Config {
     let epoch_config = EpochConfig {
-        proto_server_addr: "127.0.0.1:50052".parse().unwrap(),
+        // Not used in these tests.
+        proto_server_addr: "127.0.0.1:1".parse().unwrap(),
     };
     let mut config = Config {
         range_server: RangeServerConfig {
@@ -73,6 +81,7 @@ async fn init_config() -> Config {
     };
     let epoch_publishers = HashSet::from([EpochPublisher {
         name: "ep1".to_string(),
+        // Not used in these tests.
         backend_addr: "127.0.0.1:50051".parse().unwrap(),
         fast_network_addr: "127.0.0.1:50052".parse().unwrap(),
     }]);
@@ -94,22 +103,58 @@ async fn setup() -> TestContext {
     let zone = make_zone();
     let zone_clone = zone.clone();
     let frontend_addr = config.frontend.proto_server_addr.to_string().clone();
+    let cancellation_token = CancellationToken::new();
 
-    //  Start the mock epoch publisher
-    //  Start as many MockEpochPublishers as there are epoch publishers in the config
-    for publisher in config.regions.get(&zone.region).unwrap().epoch_publishers.iter() {
-        let fast_network_addr = publisher.publishers.iter().next().unwrap().fast_network_addr.clone();
-        MockEpochPublisher::start(fast_network_addr.to_string(), CancellationToken::new()).await.unwrap();
-    }
-    //  Start the mock range server
-    // MockRangeServer::start(&config).await;
+    // ----- Start as many MockEpochPublishers as there are epoch publishers in the config -----
+    for publisher in config
+        .regions
+        .get(&zone.region)
+        .unwrap()
+        .epoch_publishers
+        .iter()
+    {
+        let fast_network_addr = publisher
+            .publishers
+            .iter()
+            .next()
+            .unwrap()
+            .fast_network_addr
+            .clone();
 
-    //  Start the Frontend server
-    RUNTIME.spawn(async move {
-        let fast_network_addr = &config.frontend.fast_network_addr;
-        let fast_network = Arc::new(UdpFastNetwork::new(
-            UdpSocket::bind(fast_network_addr).unwrap(),
+        let fast_network: Arc<UdpFastNetwork> = Arc::new(UdpFastNetwork::new(
+            UdpSocket::bind(&fast_network_addr).unwrap(),
         ));
+        MockEpochPublisher::start(fast_network, cancellation_token.clone())
+            .await
+            .unwrap();
+    }
+
+    // ----- Start the mock range server -----
+    let fast_network: Arc<UdpFastNetwork> = Arc::new(UdpFastNetwork::new(
+        UdpSocket::bind(&config.range_server.fast_network_addr).unwrap(),
+    ));
+    MockRangeServer::start(
+        &config,
+        zone.clone(),
+        fast_network,
+        cancellation_token.clone(),
+    )
+    .await
+    .unwrap();
+
+    // ----- Start the Frontend server -----
+    let fast_network = Arc::new(UdpFastNetwork::new(
+        UdpSocket::bind(&config.frontend.fast_network_addr).unwrap(),
+    ));
+    let fast_network_clone = fast_network.clone();
+    RUNTIME.spawn(async move {
+        loop {
+            fast_network_clone.poll();
+            tokio::task::yield_now().await
+        }
+    });
+
+    RUNTIME.spawn(async move {
         let cancellation_token = CancellationToken::new();
         let universe_client = MockUniverse::start(&config).await.unwrap();
         let range_assignment_oracle = Arc::new(RangeAssignmentOracle::new(universe_client));
@@ -127,6 +172,7 @@ async fn setup() -> TestContext {
         Server::start(server).await;
     });
 
+    // ----- Connect to the Frontend server -----
     let client: FrontendClient<tonic::transport::Channel>;
     loop {
         let client_result = FrontendClient::connect(format!("http://{}", frontend_addr)).await;
@@ -215,12 +261,12 @@ async fn test_frontend() {
         .unwrap();
     println!("Value: {:?}", value);
 
-    // // ----- Commit transaction -----
-    // context
-    //     .client
-    //     .commit(CommitRequest {
-    //         transaction_id: transaction_id.to_string(),
-    //     })
-    //     .await
-    //     .unwrap();
+    // ----- Commit transaction -----
+    context
+        .client
+        .commit(CommitRequest {
+            transaction_id: transaction_id.to_string(),
+        })
+        .await
+        .unwrap();
 }

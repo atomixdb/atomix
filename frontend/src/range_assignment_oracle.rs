@@ -3,11 +3,15 @@ use bytes::Bytes;
 use uuid::Uuid;
 
 use common::membership::range_assignment_oracle::RangeAssignmentOracle as RangeAssignmentOracleTrait;
-use common::{full_range_id::FullRangeId, host_info::HostInfo, keyspace_id::KeyspaceId};
+use common::{
+    full_range_id::FullRangeId,
+    host_info::{HostIdentity, HostInfo},
+    keyspace_id::KeyspaceId,
+    region::{Region, Zone},
+};
 
 use proto::universe::universe_client::UniverseClient;
 use proto::universe::{get_keyspace_info_request::KeyspaceInfoSearchField, GetKeyspaceInfoRequest};
-
 // TODO: Dumb little Oracle -- redesign it
 
 pub struct RangeAssignmentOracle {
@@ -58,8 +62,26 @@ impl RangeAssignmentOracleTrait for RangeAssignmentOracle {
     }
 
     async fn host_of_range(&self, range_id: &FullRangeId) -> Option<HostInfo> {
-        //  Ask warden for the host of the range
-        todo!()
+        //  TODO: Ask warden for the host of the range
+        //  Hardcoding RangeServer address for now to work my way through the tests
+        let identity: String = "test_server".into();
+        let region = Region {
+            cloud: None,
+            name: "test-region".into(),
+        };
+        let zone = Zone {
+            region: region.clone(),
+            name: "a".into(),
+        };
+        Some(HostInfo {
+            identity: HostIdentity {
+                name: identity.clone(),
+                zone,
+            },
+            address: "127.0.0.1:50055".parse().unwrap(),
+
+            warden_connection_epoch: 0,
+        })
     }
     fn maybe_refresh_host_of_range(&self, range_id: &FullRangeId) {
         todo!()

@@ -9,6 +9,7 @@ edition = "2021"
 common = { version = "0.1.0", path = "../common" }
 coordinator = { version = "0.1.0", path = "../coordinator"}
 universe = { version = "0.1.0", path = "../universe"}
+epoch_reader = { version = "0.1.0", path = "../epoch_reader"}
 flatbuf = {path = "../flatbuf"}
 bytes = "1.7.2"
 proto = {path = "../proto"}

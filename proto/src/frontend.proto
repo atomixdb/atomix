@@ -8,6 +8,7 @@ service Frontend {
     rpc StartTransaction(StartTransactionRequest) returns (StartTransactionResponse) {}
     rpc Get(GetRequest) returns (GetResponse) {}
     rpc Put(PutRequest) returns (PutResponse) {}
+    rpc Commit(CommitRequest) returns (CommitResponse) {}
 }
 
 message StartTransactionRequest {
@@ -41,5 +42,13 @@ message PutRequest {
 }
 
 message PutResponse {
+    string status = 1;
+}
+
+message CommitRequest {
+    string transaction_id = 1;
+}
+
+message CommitResponse {
     string status = 1;
 }

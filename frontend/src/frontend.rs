@@ -18,8 +18,8 @@ use tracing::instrument;
 
 use proto::frontend::frontend_server::{Frontend, FrontendServer};
 use proto::frontend::{
-    GetRequest, GetResponse, PutRequest, PutResponse, StartTransactionRequest,
-    StartTransactionResponse,
+    CommitRequest, CommitResponse, GetRequest, GetResponse, PutRequest, PutResponse,
+    StartTransactionRequest, StartTransactionResponse,
 };
 use proto::universe::universe_client::UniverseClient;
 use proto::universe::{CreateKeyspaceRequest, CreateKeyspaceResponse};
@@ -62,7 +62,7 @@ impl Frontend for ProtoServer {
             .into_inner()
             .keyspace_id;
         Ok(Response::new(CreateKeyspaceResponse {
-            // status: "Create keyspace request processed successfully".to_string(),
+            // status: "Create keyspace request processed succe!ssfully".to_string(),
             keyspace_id: keyspace_id.to_string(),
         }))
     }
@@ -98,7 +98,8 @@ impl Frontend for ProtoServer {
         let transaction = self
             .parent_server
             .coordinator
-            .start_transaction(transaction_info);
+            .start_transaction(transaction_info)
+            .await;
         self.parent_server
             .transaction_table
             .write()
@@ -198,6 +199,41 @@ impl Frontend for ProtoServer {
 
         Ok(Response::new(PutResponse {
             status: "Put request processed successfully".to_string(),
+        }))
+    }
+
+    //  Commits a transaction
+    ///
+    /// # Arguments
+    /// * `request` - Contains transaction_id
+    ///
+    /// # Returns
+    /// * `Result<Response<CommitResponse>, TStatus>` - A response containing:
+    ///   - status: Success message
+    #[instrument(skip(self))]
+    async fn commit(
+        &self,
+        request: Request<CommitRequest>,
+    ) -> Result<Response<CommitResponse>, TStatus> {
+        let req = request.get_ref();
+
+        let transaction_id = Uuid::parse_str(&req.transaction_id).map_err(|e| {
+            TStatus::invalid_argument(format!("Invalid transaction ID format: {}", e))
+        })?;
+
+        // Get the transaction
+        let tx_table = self.parent_server.transaction_table.read().await;
+        let transaction = tx_table
+            .get(&transaction_id)
+            .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+
+        let mut tx = transaction.lock().await;
+        tx.commit()
+            .await
+            .map_err(|e| TStatus::internal(format!("Commit operation failed: {:?}", e)))?;
+
+        Ok(Response::new(CommitResponse {
+            status: "Commit request processed successfully".to_string(),
         }))
     }
 }

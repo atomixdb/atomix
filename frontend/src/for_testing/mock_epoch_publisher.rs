@@ -5,17 +5,20 @@ use flatbuf::epoch_publisher_flatbuffers::epoch_publisher::*;
 use flatbuffers::FlatBufferBuilder;
 use once_cell::sync::Lazy;
 use std::net::SocketAddr;
-use std::net::UdpSocket;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, instrument, trace};
-
-static RUNTIME: Lazy<tokio::runtime::Runtime> =
-    Lazy::new(|| tokio::runtime::Runtime::new().unwrap());
-
+use tracing::{error, info, instrument, trace};
 type DynamicErr = Box<dyn std::error::Error + Sync + Send + 'static>;
+
+static RUNTIME: Lazy<tokio::runtime::Runtime> = Lazy::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+});
 
 //  Mock Epoch Publisher:
 //  1) Listens for read_epoch requests and responds with the current epoch
@@ -114,56 +117,82 @@ impl MockEpochPublisher {
         Ok(())
     }
 
+    async fn network_server_loop(
+        server: Arc<Self>,
+        fast_network: Arc<dyn FastNetwork>,
+        network_receiver: tokio::sync::mpsc::UnboundedReceiver<(SocketAddr, Bytes)>,
+        cancellation_token: CancellationToken,
+    ) {
+        let mut network_receiver = network_receiver;
+        loop {
+            let () = tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    return
+                }
+                maybe_message = network_receiver.recv() => {
+                    match maybe_message {
+                        None => {
+                            error!("fast network closed unexpectedly!");
+                            cancellation_token.cancel()
+                        }
+                        Some((sender, msg)) => {
+                            let server = server.clone();
+                            let fast_network = fast_network.clone();
+                            tokio::spawn(async move{
+                                if let Err(e) = Self::handle_message(server, fast_network, sender, msg).await {
+                                    error!("error handling a network message: {}", e);
+                                }
+                            });
+
+                        }
+                    }
+                }
+            };
+        }
+    }
+
     pub async fn start(
-        fast_network_addr: String,
+        fast_network: Arc<UdpFastNetwork>,
         cancellation_token: CancellationToken,
     ) -> Result<(), Status> {
-        let fast_network = Arc::new(UdpFastNetwork::new(
-            UdpSocket::bind(fast_network_addr).unwrap(),
-        ));
-
         let publisher = Arc::new(MockEpochPublisher {
-            epoch: AtomicUsize::new(1)
+            epoch: AtomicUsize::new(1),
         });
+
+        let fast_network_clone = fast_network.clone();
+        RUNTIME.spawn(async move {
+            loop {
+                fast_network_clone.poll();
+                tokio::task::yield_now().await
+            }
+        });
+
         let publisher_clone = publisher.clone();
         let ct_clone = cancellation_token.clone();
 
+        let (listener_tx, listener_rx) = oneshot::channel();
         RUNTIME.spawn(async move {
-            let mut network_receiver = fast_network.listen_default();
-            loop {
-                let () = tokio::select! {
-                    () = ct_clone.cancelled() => {
-                        return
-                    }
-                    maybe_message = network_receiver.recv() => {
-                        match maybe_message {
-                            None => {
-                                error!("fast network closed unexpectedly!");
-                                ct_clone.cancel()
-                            }
-                            Some((sender, msg)) => {
-                                let publisher = publisher.clone();
-                                let fast_network = fast_network.clone();
-                                tokio::spawn(async move{
-                                    if let Err(e) = Self::handle_message(publisher, fast_network, sender, msg).await {
-                                        error!("error handling a network message: {}", e);
-                                    }
-                                });
-                            }
-                        }
-                    }
-                };
-            }
+            let network_receiver = fast_network.listen_default();
+            info!("Listening to fast network");
+            listener_tx.send(()).unwrap();
+            let _ = Self::network_server_loop(
+                publisher_clone,
+                fast_network,
+                network_receiver,
+                ct_clone,
+            )
+            .await;
+            info!("Network server loop exited!")
         });
+        listener_rx.await.unwrap();
 
         // Start a loop that increments the epoch every second
         RUNTIME.spawn(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-                publisher_clone.epoch.fetch_add(1, SeqCst);
+                publisher.epoch.fetch_add(1, SeqCst);
             }
         });
-
         Ok(())
     }
 }
