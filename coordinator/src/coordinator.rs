@@ -5,13 +5,14 @@ use common::{
     network::fast_network::FastNetwork, region::Zone, transaction_info::TransactionInfo,
 };
 use epoch_reader::reader::EpochReader;
+use proto::universe::universe_client::UniverseClient;
 use tokio_util::sync::CancellationToken;
 use tx_state_store::client::Client as TxStateStoreClient;
 
 use crate::transaction::Transaction;
 
 pub struct Coordinator {
-    config: Config,
+    universe_client: UniverseClient<tonic::transport::Channel>,
     range_assignment_oracle: Arc<dyn RangeAssignmentOracle>,
     runtime: tokio::runtime::Handle,
     range_client: Arc<crate::rangeclient::RangeClient>,
@@ -50,8 +51,11 @@ impl Coordinator {
             publisher_set.clone(),
             cancellation_token.clone(),
         ));
+        let universe_addr = format!("http://{}", config.universe.proto_server_addr.to_string());
+        let universe_client = UniverseClient::connect(universe_addr).await.unwrap();
+
         Coordinator {
-            config: config.clone(),
+            universe_client,
             range_assignment_oracle,
             runtime,
             range_client,
@@ -68,8 +72,8 @@ impl Coordinator {
             .unwrap();
 
         Transaction::new(
-            self.config.clone(),
             transaction_info,
+            self.universe_client.clone(),
             self.range_client.clone(),
             self.range_assignment_oracle.clone(),
             self.epoch_reader.clone(),

@@ -16,3 +16,4 @@ tokio = "1.40.0"
 tokio-util = "0.7.10"
 tx_state_store = { version = "0.1.0", path = "../tx_state_store" }
 uuid = "1.10.0"
+tonic = "0.11.0"
