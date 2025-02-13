@@ -8,6 +8,8 @@ service Frontend {
     rpc StartTransaction(StartTransactionRequest) returns (StartTransactionResponse) {}
     rpc Get(GetRequest) returns (GetResponse) {}
     rpc Put(PutRequest) returns (PutResponse) {}
+    rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+    rpc Abort(AbortRequest) returns (AbortResponse) {}
     rpc Commit(CommitRequest) returns (CommitResponse) {}
 }
 
@@ -42,6 +44,24 @@ message PutRequest {
 }
 
 message PutResponse {
+    string status = 1;
+}
+
+message DeleteRequest {
+    string transaction_id = 1;
+    Keyspace keyspace = 2;
+    bytes key = 3;
+}
+
+message DeleteResponse {
+    string status = 1;
+}
+
+message AbortRequest {
+    string transaction_id = 1;
+}
+
+message AbortResponse {
     string status = 1;
 }
 

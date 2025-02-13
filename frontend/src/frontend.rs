@@ -18,8 +18,9 @@ use tracing::instrument;
 
 use proto::frontend::frontend_server::{Frontend, FrontendServer};
 use proto::frontend::{
-    CommitRequest, CommitResponse, GetRequest, GetResponse, PutRequest, PutResponse,
-    StartTransactionRequest, StartTransactionResponse,
+    AbortRequest, AbortResponse, CommitRequest, CommitResponse, DeleteRequest, DeleteResponse,
+    GetRequest, GetResponse, PutRequest, PutResponse, StartTransactionRequest,
+    StartTransactionResponse,
 };
 use proto::universe::universe_client::UniverseClient;
 use proto::universe::{CreateKeyspaceRequest, CreateKeyspaceResponse};
@@ -202,6 +203,96 @@ impl Frontend for ProtoServer {
         }))
     }
 
+    /// Deletes a key in a given keyspace
+    ///
+    /// # Arguments
+    /// * `request` - Contains transaction_id, keyspace, and key
+    ///
+    /// # Returns
+    /// * `Result<Response<DeleteResponse>, TStatus>` - A response containing:
+    ///   - status: Success message
+    #[instrument(skip(self))]
+    async fn delete(
+        &self,
+        request: Request<DeleteRequest>,
+    ) -> Result<Response<DeleteResponse>, TStatus> {
+        let req = request.get_ref();
+
+        // Parse the transaction ID
+        let transaction_id = Uuid::parse_str(&req.transaction_id).map_err(|e| {
+            TStatus::invalid_argument(format!("Invalid transaction ID format: {}", e))
+        })?;
+
+        let keyspace_proto = req
+            .keyspace
+            .as_ref()
+            .ok_or_else(|| TStatus::invalid_argument("Missing keyspace"))?;
+        let keyspace = Keyspace {
+            namespace: keyspace_proto.namespace.clone(),
+            name: keyspace_proto.name.clone(),
+        };
+        let key = bytes::Bytes::copy_from_slice(&req.key);
+
+        // Get the transaction
+        let tx_table = self.parent_server.transaction_table.read().await;
+        let transaction = tx_table
+            .get(&transaction_id)
+            .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+
+        let mut tx = transaction.lock().await;
+        tx.del(&keyspace, key)
+            .await
+            .map_err(|e| TStatus::internal(format!("Delete operation failed: {:?}", e)))?;
+
+        Ok(Response::new(DeleteResponse {
+            status: "Delete request processed successfully".to_string(),
+        }))
+    }
+
+    /// Aborts a transaction
+    ///
+    /// # Arguments
+    /// * `request` - Contains transaction_id
+    ///
+    /// # Returns
+    /// * `Result<Response<AbortResponse>, TStatus>` - A response containing:
+    ///   - status: Success message
+    #[instrument(skip(self))]
+    async fn abort(
+        &self,
+        request: Request<AbortRequest>,
+    ) -> Result<Response<AbortResponse>, TStatus> {
+        let req = request.get_ref();
+
+        // Parse the transaction ID
+        let transaction_id = Uuid::parse_str(&req.transaction_id).map_err(|e| {
+            TStatus::invalid_argument(format!("Invalid transaction ID format: {}", e))
+        })?;
+
+        // Get the transaction
+        {
+            let tx_table = self.parent_server.transaction_table.read().await;
+            let transaction = tx_table
+                .get(&transaction_id)
+                .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+
+            let mut tx = transaction.lock().await;
+            tx.abort()
+                .await
+                .map_err(|e| TStatus::internal(format!("Abort operation failed: {:?}", e)))?;
+        }
+        // Remove the transaction from the transaction table
+        self.parent_server
+            .transaction_table
+            .write()
+            .await
+            .remove(&transaction_id);
+
+        Ok(Response::new(AbortResponse {
+            status: "Abort request processed successfully".to_string(),
+        }))
+    }
+
     //  Commits a transaction
     ///
     /// # Arguments
@@ -222,16 +313,23 @@ impl Frontend for ProtoServer {
         })?;
 
         // Get the transaction
-        let tx_table = self.parent_server.transaction_table.read().await;
-        let transaction = tx_table
-            .get(&transaction_id)
-            .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+        {
+            let tx_table = self.parent_server.transaction_table.read().await;
+            let transaction = tx_table
+                .get(&transaction_id)
+                .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
 
-        let mut tx = transaction.lock().await;
-        tx.commit()
+            let mut tx = transaction.lock().await;
+            tx.commit()
+                .await
+                .map_err(|e| TStatus::internal(format!("Commit operation failed: {:?}", e)))?;
+        }
+        // Remove the transaction from the transaction table
+        self.parent_server
+            .transaction_table
+            .write()
             .await
-            .map_err(|e| TStatus::internal(format!("Commit operation failed: {:?}", e)))?;
-
+            .remove(&transaction_id);
         Ok(Response::new(CommitResponse {
             status: "Commit request processed successfully".to_string(),
         }))

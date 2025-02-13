@@ -24,7 +24,8 @@ use tracing::info;
 
 use proto::frontend::frontend_client::FrontendClient;
 use proto::frontend::{
-    CommitRequest, GetRequest, Keyspace as ProtoKeyspace, PutRequest, StartTransactionRequest,
+    AbortRequest, CommitRequest, DeleteRequest, GetRequest, Keyspace as ProtoKeyspace, PutRequest,
+    StartTransactionRequest,
 };
 use proto::universe::{CreateKeyspaceRequest, KeyRangeRequest, Zone as ProtoZone};
 
@@ -42,6 +43,7 @@ struct TestContext {
     zone: ProtoZone,
     base_key_ranges: Vec<KeyRangeRequest>,
     client: FrontendClient<tonic::transport::Channel>,
+    cancellation_token: CancellationToken,
 }
 
 fn make_zone() -> Zone {
@@ -129,7 +131,7 @@ async fn setup() -> TestContext {
             .unwrap();
     }
 
-    // ----- Start the mock range server -----
+    // ----- Start the MockRangeServer -----
     let fast_network: Arc<UdpFastNetwork> = Arc::new(UdpFastNetwork::new(
         UdpSocket::bind(&config.range_server.fast_network_addr).unwrap(),
     ));
@@ -188,8 +190,8 @@ async fn setup() -> TestContext {
         }
     }
     let keyspace = Keyspace {
-        namespace: "test".to_string(),
-        name: "bubbles".to_string(),
+        namespace: "test_namespace".to_string(),
+        name: "test_name".to_string(),
     };
     let key_range_requests = vec![KeyRangeRequest {
         lower_bound_inclusive: vec![0],
@@ -201,6 +203,13 @@ async fn setup() -> TestContext {
         zone: ProtoZone::from(zone),
         base_key_ranges: key_range_requests,
         client,
+        cancellation_token,
+    }
+}
+
+impl Drop for TestContext {
+    fn drop(&mut self) {
+        self.cancellation_token.cancel();
     }
 }
 
@@ -214,13 +223,13 @@ async fn test_frontend() {
         .create_keyspace(CreateKeyspaceRequest {
             namespace: context.keyspace.namespace.clone(),
             name: context.keyspace.name.clone(),
-            primary_zone: Some(context.zone.into()),
-            base_key_ranges: context.base_key_ranges,
+            primary_zone: Some(context.zone.clone()),
+            base_key_ranges: context.base_key_ranges.clone(),
         })
         .await
         .unwrap();
     let keyspace_id = response.get_ref().keyspace_id.clone();
-    println!("Created keyspace with ID: {:?}", keyspace_id);
+    info!("Created keyspace with ID: {:?}", keyspace_id);
 
     // ----- Start transaction -----
     let response = context
@@ -229,7 +238,7 @@ async fn test_frontend() {
         .await
         .unwrap();
     let transaction_id = Uuid::parse_str(&response.get_ref().transaction_id).unwrap();
-    println!("Started transaction with ID: {:?}", transaction_id);
+    info!("Started transaction with ID: {:?}", transaction_id);
 
     // ----- Put key-value pair into keyspace -----
     context
@@ -241,12 +250,14 @@ async fn test_frontend() {
                 name: context.keyspace.name.clone(),
             }),
             key: Bytes::from_static(&[5]).to_vec(),
-            value: Bytes::from_static(b"bubbles").to_vec(),
+            value: Bytes::from_static(&[100]).to_vec(),
         })
         .await
         .unwrap();
+    info!("Put key-value pair into keyspace");
 
     // ----- Get value from keyspace, key -----
+    //  This tests the "read your writes" path
     let value = context
         .client
         .get(GetRequest {
@@ -259,7 +270,11 @@ async fn test_frontend() {
         })
         .await
         .unwrap();
-    println!("Value: {:?}", value);
+    info!("Got Value: {:?}", value.get_ref().value);
+    assert_eq!(
+        value.get_ref().value,
+        Some(Bytes::from_static(&[100]).to_vec())
+    );
 
     // ----- Commit transaction -----
     context
@@ -269,4 +284,74 @@ async fn test_frontend() {
         })
         .await
         .unwrap();
+    info!("Committed transaction");
+
+    // ----- Start new transaction -----
+    let response = context
+        .client
+        .start_transaction(StartTransactionRequest {})
+        .await
+        .unwrap();
+    let transaction_id = Uuid::parse_str(&response.get_ref().transaction_id).unwrap();
+    info!("Started transaction with ID: {:?}", transaction_id);
+
+    // ----- Get value from keyspace, key -----
+    //  Gets value from the previous transaction
+    let value = context
+        .client
+        .get(GetRequest {
+            transaction_id: transaction_id.to_string(),
+            keyspace: Some(ProtoKeyspace {
+                namespace: context.keyspace.namespace.clone(),
+                name: context.keyspace.name.clone(),
+            }),
+            key: Bytes::from_static(&[5]).to_vec(),
+        })
+        .await
+        .unwrap();
+    info!("Value: {:?}", value);
+    assert_eq!(
+        value.get_ref().value,
+        Some(Bytes::from_static(&[100]).to_vec())
+    );
+
+    // ----- Delete key-value pair from keyspace -----
+    context
+        .client
+        .delete(DeleteRequest {
+            transaction_id: transaction_id.to_string(),
+            keyspace: Some(ProtoKeyspace {
+                namespace: context.keyspace.namespace.clone(),
+                name: context.keyspace.name.clone(),
+            }),
+            key: Bytes::from_static(&[5]).to_vec(),
+        })
+        .await
+        .unwrap();
+    info!("Deleted key-value pair from keyspace");
+    // ----- Put a new key-value pair into keyspace -----
+    context
+        .client
+        .put(PutRequest {
+            transaction_id: transaction_id.to_string(),
+            keyspace: Some(ProtoKeyspace {
+                namespace: context.keyspace.namespace.clone(),
+                name: context.keyspace.name.clone(),
+            }),
+            key: Bytes::from_static(&[4]).to_vec(),
+            value: Bytes::from_static(b"bubbles").to_vec(),
+        })
+        .await
+        .unwrap();
+    info!("Put a new key-value pair into keyspace");
+
+    // ----- Abort the transaction -----
+    context
+        .client
+        .abort(AbortRequest {
+            transaction_id: transaction_id.to_string(),
+        })
+        .await
+        .unwrap();
+    info!("Aborted transaction");
 }

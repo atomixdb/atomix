@@ -31,7 +31,6 @@ pub struct MockRangeServer {
 struct RangeServerState {
     // Map of key -> value
     data: Arc<RwLock<HashMap<Bytes, Bytes>>>,
-    // Assuming we have only one range in the range server for simplicity
     pending_prepare_records: Arc<Mutex<HashMap<Uuid, Bytes>>>,
 }
 // Mock Range Server:
@@ -52,6 +51,7 @@ impl MockRangeServer {
             &util::flatbuf::serialize_uuid(request_id),
         ));
         let data = self.state.data.read().await;
+        info!("Current data store: {:?}", data);
 
         let mut records = Vec::new();
         for key in request.keys().iter() {
@@ -88,101 +88,6 @@ impl MockRangeServer {
         Ok(())
     }
 
-    async fn handle_commit(
-        &self,
-        network: Arc<dyn FastNetwork>,
-        sender: SocketAddr,
-        request: CommitRequest<'_>,
-    ) -> Result<(), DynamicErr> {
-        let mut fbb = FlatBufferBuilder::new();
-        let req_id = request.request_id().unwrap();
-        let request_id = util::flatbuf::deserialize_uuid(req_id);
-        let request_id = Some(Uuidu128::create(
-            &mut fbb,
-            &util::flatbuf::serialize_uuid(request_id),
-        ));
-        let transaction_id = match request.transaction_id() {
-            None => panic!("Transaction ID is required"),
-            Some(id) => util::flatbuf::deserialize_uuid(id),
-        };
-        let prepare_record_bytes = {
-            let mut pending_prepare_records = self.state.pending_prepare_records.lock().unwrap();
-            pending_prepare_records
-                .remove(&transaction_id)
-                .unwrap()
-                .clone()
-        };
-        let prepare_record = flatbuffers::root::<PrepareRequest>(prepare_record_bytes.as_ref())?;
-        for put in prepare_record.puts().iter() {
-            for put in put.iter() {
-                let key = Bytes::copy_from_slice(put.key().unwrap().k().unwrap().bytes());
-                let val = Bytes::copy_from_slice(put.value().unwrap().bytes());
-                let mut data = self.state.data.write().await;
-                data.insert(key, val);
-            }
-        }
-        for del in prepare_record.deletes().iter() {
-            for del in del.iter() {
-                let key = Bytes::copy_from_slice(del.k().unwrap().bytes());
-                let mut data = self.state.data.write().await;
-                data.remove(&key);
-            }
-        }
-        let commit_response = CommitResponse::create(
-            &mut fbb,
-            &CommitResponseArgs {
-                request_id: request_id,
-                status: Status::Ok,
-            },
-        );
-        fbb.finish(commit_response, None);
-        self.send_response(network, sender, MessageType::Commit, fbb.finished_data())?;
-        Ok(())
-    }
-    async fn handle_prepare(
-        &self,
-        network: Arc<dyn FastNetwork>,
-        sender: SocketAddr,
-        request: PrepareRequest<'_>,
-    ) -> Result<(), DynamicErr> {
-        let transaction_id = match request.transaction_id() {
-            None => panic!("Transaction ID is required"),
-            Some(id) => util::flatbuf::deserialize_uuid(id),
-        };
-
-        let mut fbb = FlatBufferBuilder::new();
-        let req_id = request.request_id().unwrap();
-        let request_id = util::flatbuf::deserialize_uuid(req_id);
-        let request_id = Some(Uuidu128::create(
-            &mut fbb,
-            &util::flatbuf::serialize_uuid(request_id),
-        ));
-        let epoch = self.epoch_reader.read_epoch().await.unwrap();
-        let epoch_lease = Some(EpochLease::create(
-            &mut fbb,
-            &EpochLeaseArgs {
-                lower_bound_inclusive: epoch,
-                upper_bound_inclusive: epoch + 1,
-            },
-        ));
-        let prepare_response = PrepareResponse::create(
-            &mut fbb,
-            &PrepareResponseArgs {
-                request_id: request_id,
-                status: Status::Ok,
-                epoch_lease: epoch_lease,
-                highest_known_epoch: epoch,
-            },
-        );
-
-        let mut pending_prepare_records = self.state.pending_prepare_records.lock().unwrap();
-        pending_prepare_records.insert(transaction_id, Bytes::copy_from_slice(request._tab.buf()));
-
-        fbb.finish(prepare_response, None);
-        self.send_response(network, sender, MessageType::Prepare, fbb.finished_data())?;
-        Ok(())
-    }
-
     async fn handle_abort(
         &self,
         network: Arc<dyn FastNetwork>,
@@ -214,6 +119,134 @@ impl MockRangeServer {
         Ok(())
     }
 
+    async fn handle_prepare(
+        &self,
+        network: Arc<dyn FastNetwork>,
+        sender: SocketAddr,
+        request: PrepareRequest<'_>,
+    ) -> Result<(), DynamicErr> {
+        let transaction_id = match request.transaction_id() {
+            None => panic!("Transaction ID is required"),
+            Some(id) => util::flatbuf::deserialize_uuid(id),
+        };
+
+        let mut fbb = FlatBufferBuilder::new();
+        let req_id = request.request_id().unwrap();
+        let request_id = util::flatbuf::deserialize_uuid(req_id);
+        let request_id = Some(Uuidu128::create(
+            &mut fbb,
+            &util::flatbuf::serialize_uuid(request_id),
+        ));
+        let epoch = self.epoch_reader.read_epoch().await.unwrap();
+        let epoch_lease = Some(EpochLease::create(
+            &mut fbb,
+            &EpochLeaseArgs {
+                lower_bound_inclusive: epoch,
+                upper_bound_inclusive: epoch + 10,
+            },
+        ));
+        let prepare_response = PrepareResponse::create(
+            &mut fbb,
+            &PrepareResponseArgs {
+                request_id: request_id,
+                status: Status::Ok,
+                epoch_lease: epoch_lease,
+                highest_known_epoch: epoch,
+            },
+        );
+
+        let mut pending_prepare_records = self.state.pending_prepare_records.lock().unwrap();
+        pending_prepare_records.insert(transaction_id, Bytes::copy_from_slice(request._tab.buf()));
+
+        fbb.finish(prepare_response, None);
+        self.send_response(network, sender, MessageType::Prepare, fbb.finished_data())?;
+        Ok(())
+    }
+
+    async fn handle_commit(
+        &self,
+        network: Arc<dyn FastNetwork>,
+        sender: SocketAddr,
+        request: CommitRequest<'_>,
+    ) -> Result<(), DynamicErr> {
+        let mut fbb = FlatBufferBuilder::new();
+        let req_id = request.request_id().unwrap();
+        let request_id = util::flatbuf::deserialize_uuid(req_id);
+        let request_id = Some(Uuidu128::create(
+            &mut fbb,
+            &util::flatbuf::serialize_uuid(request_id),
+        ));
+        let transaction_id = match request.transaction_id() {
+            None => panic!("Transaction ID is required"),
+            Some(id) => util::flatbuf::deserialize_uuid(id),
+        };
+        let prepare_record_bytes = {
+            let mut pending_prepare_records = self.state.pending_prepare_records.lock().unwrap();
+            pending_prepare_records
+                .remove(&transaction_id)
+                .unwrap()
+                .clone()
+        };
+        let prepare_record = flatbuffers::root::<PrepareRequest>(prepare_record_bytes.as_ref())?;
+        let mut data = self.state.data.write().await;
+        for put in prepare_record.puts().iter() {
+            for put in put.iter() {
+                let key = Bytes::copy_from_slice(put.key().unwrap().k().unwrap().bytes());
+                let val = Bytes::copy_from_slice(put.value().unwrap().bytes());
+                info!("Committing key {:?} with value {:?}", key, val);
+                data.insert(key, val);
+            }
+        }
+        for del in prepare_record.deletes().iter() {
+            for del in del.iter() {
+                let key = Bytes::copy_from_slice(del.k().unwrap().bytes());
+                data.remove(&key);
+            }
+        }
+        let commit_response = CommitResponse::create(
+            &mut fbb,
+            &CommitResponseArgs {
+                request_id: request_id,
+                status: Status::Ok,
+            },
+        );
+        fbb.finish(commit_response, None);
+        self.send_response(network, sender, MessageType::Commit, fbb.finished_data())?;
+        Ok(())
+    }
+
+    async fn handle_message(
+        server: Arc<Self>,
+        fast_network: Arc<dyn FastNetwork>,
+        sender: SocketAddr,
+        msg: Bytes,
+    ) -> Result<(), DynamicErr> {
+        let msg = msg.to_vec();
+        let envelope = flatbuffers::root::<RequestEnvelope>(msg.as_slice())?;
+
+        match envelope.type_() {
+            MessageType::Get => {
+                let req = flatbuffers::root::<GetRequest>(envelope.bytes().unwrap().bytes())?;
+                server.handle_get(fast_network, sender, req).await?
+            }
+            MessageType::Abort => {
+                let req = flatbuffers::root::<AbortRequest>(envelope.bytes().unwrap().bytes())?;
+                server.handle_abort(fast_network, sender, req).await?
+            }
+            MessageType::Prepare => {
+                let req = flatbuffers::root::<PrepareRequest>(envelope.bytes().unwrap().bytes())?;
+                server.handle_prepare(fast_network, sender, req).await?
+            }
+            MessageType::Commit => {
+                let req = flatbuffers::root::<CommitRequest>(envelope.bytes().unwrap().bytes())?;
+                server.handle_commit(fast_network, sender, req).await?
+            }
+
+            _ => error!("Received unknown message type: {:?}", envelope.type_()),
+        }
+        Ok(())
+    }
+
     fn send_response(
         &self,
         fast_network: Arc<dyn FastNetwork>,
@@ -232,37 +265,6 @@ impl MockRangeServer {
         );
         fbb.finish(response, None);
         fast_network.send(sender, Bytes::copy_from_slice(fbb.finished_data()))
-    }
-
-    async fn handle_message(
-        server: Arc<Self>,
-        fast_network: Arc<dyn FastNetwork>,
-        sender: SocketAddr,
-        msg: Bytes,
-    ) -> Result<(), DynamicErr> {
-        let msg = msg.to_vec();
-        let envelope = flatbuffers::root::<RequestEnvelope>(msg.as_slice())?;
-
-        match envelope.type_() {
-            MessageType::Get => {
-                let req = flatbuffers::root::<GetRequest>(envelope.bytes().unwrap().bytes())?;
-                server.handle_get(fast_network, sender, req).await?
-            }
-            MessageType::Prepare => {
-                let req = flatbuffers::root::<PrepareRequest>(envelope.bytes().unwrap().bytes())?;
-                server.handle_prepare(fast_network, sender, req).await?
-            }
-            MessageType::Commit => {
-                let req = flatbuffers::root::<CommitRequest>(envelope.bytes().unwrap().bytes())?;
-                server.handle_commit(fast_network, sender, req).await?
-            }
-            MessageType::Abort => {
-                let req = flatbuffers::root::<AbortRequest>(envelope.bytes().unwrap().bytes())?;
-                server.handle_abort(fast_network, sender, req).await?
-            }
-            _ => error!("Received unknown message type: {:?}", envelope.type_()),
-        }
-        Ok(())
     }
 
     pub async fn start(
