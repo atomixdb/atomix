@@ -186,13 +186,13 @@ impl MockEpochPublisher {
         });
         listener_rx.await.unwrap();
 
-        // Start a loop that increments the epoch every second
-        RUNTIME.spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-                publisher.epoch.fetch_add(1, SeqCst);
-            }
-        });
+        // // Start a loop that increments the epoch every second
+        // RUNTIME.spawn(async move {
+        //     loop {
+        //         tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        //         publisher.epoch.fetch_add(1, SeqCst);
+        //     }
+        // });
         Ok(())
     }
 }
