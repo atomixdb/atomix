@@ -70,7 +70,6 @@ impl Transaction {
         if let Some(k) = self.resolved_keyspaces.get(keyspace) {
             return Ok(*k);
         };
-        // TODO(tamer): implement proper resolution from universe.
         let keyspace_info_request = GetKeyspaceInfoRequest {
             keyspace_info_search_field: Some(KeyspaceInfoSearchField::Keyspace(ProtoKeyspace {
                 namespace: keyspace.namespace.clone(),
