@@ -83,6 +83,14 @@ data:
         "epoch": {
             "proto_server_addr": "atomix-epoch:50050"
         },
+        "frontend": {
+            "proto_server_addr": "127.0.0.1:50057",
+            "fast_network_addr": "127.0.0.1:50058",
+            "transaction_overall_timeout": {
+                "secs": 10,
+                "nanos": 0
+            }
+        },
         "cassandra": {
             "cql_addr": "cassandra:9042"
         },

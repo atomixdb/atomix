@@ -126,10 +126,18 @@ pub struct UniverseConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FrontendConfig {
+    pub proto_server_addr: HostPort,
+    pub fast_network_addr: HostPort,
+    pub transaction_overall_timeout: std::time::Duration,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub range_server: RangeServerConfig,
     pub epoch: EpochConfig,
     pub universe: UniverseConfig,
+    pub frontend: FrontendConfig,
     pub cassandra: CassandraConfig,
     pub regions: HashMap<Region, RegionConfig>,
 }
