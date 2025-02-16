@@ -1,0 +1,74 @@
+syntax = "proto3";
+package frontend;
+
+import "universe.proto";
+
+service Frontend {
+    rpc CreateKeyspace(universe.CreateKeyspaceRequest) returns (universe.CreateKeyspaceResponse);
+    rpc StartTransaction(StartTransactionRequest) returns (StartTransactionResponse) {}
+    rpc Get(GetRequest) returns (GetResponse) {}
+    rpc Put(PutRequest) returns (PutResponse) {}
+    rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+    rpc Abort(AbortRequest) returns (AbortResponse) {}
+    rpc Commit(CommitRequest) returns (CommitResponse) {}
+}
+
+message StartTransactionRequest {
+}
+
+message StartTransactionResponse {
+    string status = 1;
+    string transaction_id = 2;
+}
+message Keyspace {
+    string namespace = 1;
+    string name = 2;
+}
+
+message GetRequest {
+    string transaction_id = 1;
+    Keyspace keyspace = 2;
+    bytes key = 3;
+}
+
+message GetResponse {
+    string status = 1;
+    optional bytes value = 2;
+}
+
+message PutRequest {
+    string transaction_id = 1;
+    Keyspace keyspace = 2;
+    bytes key = 3;
+    bytes value = 4;
+}
+
+message PutResponse {
+    string status = 1;
+}
+
+message DeleteRequest {
+    string transaction_id = 1;
+    Keyspace keyspace = 2;
+    bytes key = 3;
+}
+
+message DeleteResponse {
+    string status = 1;
+}
+
+message AbortRequest {
+    string transaction_id = 1;
+}
+
+message AbortResponse {
+    string status = 1;
+}
+
+message CommitRequest {
+    string transaction_id = 1;
+}
+
+message CommitResponse {
+    string status = 1;
+}
