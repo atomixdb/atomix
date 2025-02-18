@@ -1,8 +1,11 @@
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: atomix-frontend
   namespace: atomix
+  labels:
+    app: atomix-frontend
 spec:
   serviceName: "atomix-frontend"
   replicas: 1
@@ -39,7 +42,7 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: atomix-rangeserver-config
+          name: atomix-frontend-config
 ---
 apiVersion: v1
 kind: Service
