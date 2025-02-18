@@ -27,10 +27,10 @@ spec:
           - name: RUST_LOG
             value: "info"
         ports:
-        - containerPort: 50054
+        - containerPort: 50057
           name: proto-server
           protocol: TCP
-        - containerPort: 50055
+        - containerPort: 50058
           name: fast-network
           protocol: UDP
         volumeMounts:
