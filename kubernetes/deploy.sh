@@ -131,10 +131,11 @@ def main():
     # 2. Deploy Cassandra.
     # 3. Create keyspace and schema in Cassandra
     # 4. Deploy the universe manager.
-    # 5. Deploy the epoch service.
-    # 6. Deploy the epoch publisher.
-    # 7. Deploy the warden service.
-    # 8. Deploy the rangemanager.
+    # 5. Deploy the frontend.
+    # 6. Deploy the epoch service.
+    # 7. Deploy the epoch publisher.
+    # 8. Deploy the warden service.
+    # 9. Deploy the rangemanager.
 
     global log
     logging.basicConfig(level=logging.INFO)
@@ -188,6 +189,12 @@ def main():
     log.info("Deploying Universe Manager")
     kubectl_apply_and_wait_for_sts(
         "universe.yaml", "atomix-universe", ATOMIX_NAMESPACE
+    )
+    time.sleep(3)
+
+    log.info("Deploying Frontend")
+    kubectl_apply_and_wait_for_sts(
+        "frontend.yaml", "atomix-frontend", ATOMIX_NAMESPACE
     )
     time.sleep(3)
 

@@ -94,7 +94,7 @@ jobs:
         docker build -t atomix-epoch-publisher:latest --target epoch_publisher .
         docker build -t atomix-epoch:latest --target epoch .
         docker build -t atomix-universe:latest --target universe .
-
+        docker build -t atomix-frontend:latest --target frontend .
     - name: Deploy and verify Atomix
       run: |
         cd kubernetes && ./deploy.sh
