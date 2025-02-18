@@ -55,6 +55,8 @@ jobs:
             tags: atomix-epoch:latest
           - target: universe
             tags: atomix-universe:latest
+          - target: frontend
+            tags: atomix-frontend:latest
 
     steps:
     - uses: actions/checkout@v3
