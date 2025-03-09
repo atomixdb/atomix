@@ -25,7 +25,7 @@ use tracing::{debug, info, instrument};
 
 use crate::{
     assignment_computation::{AssignmentComputation, AssignmentComputationImpl},
-    persistence::PersistenceImpl,
+    persistence::cassandra::Cassandra,
 };
 
 /// Implementation of the Warden service.
@@ -116,7 +116,7 @@ pub async fn run_warden_server(
     let assignment_computation = AssignmentComputationImpl::new(
         universe_client,
         region,
-        Arc::new(PersistenceImpl::new(cassandra_addr).await),
+        Arc::new(Cassandra::new(cassandra_addr).await),
     )
     .await;
     let clone = assignment_computation.clone();

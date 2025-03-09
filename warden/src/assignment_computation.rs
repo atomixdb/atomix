@@ -465,7 +465,7 @@ mod tests {
     use tonic::{Code, Request, Response};
     use uuid::Uuid;
 
-    use crate::persistence::PersistenceImpl;
+    use crate::persistence::cassandra::Cassandra;
 
     use super::*;
     use std::sync::Arc;
@@ -632,7 +632,7 @@ mod tests {
                 .unwrap(),
         );
 
-        let persistence = Arc::new(PersistenceImpl::new("127.0.0.1:9042".to_string()).await);
+        let persistence = Arc::new(Cassandra::new("127.0.0.1:9042".to_string()).await);
         let assignment_computation = AssignmentComputationImpl::new(
             client,
             Region {
