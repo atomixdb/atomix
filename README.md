@@ -1,8 +1,6 @@
 # Atomix
 
-The World's Best Transactional Database System.
-
-A research system pushing the boundaries of what's possible in OLTP systems in modern datacenters.
+Foundational ACID transactional layer for the modern datacenter.
 
 ## Publications
 
