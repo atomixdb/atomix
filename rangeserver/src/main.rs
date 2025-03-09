@@ -69,7 +69,7 @@ fn main() {
             publisher_set.clone(),
             cancellation_token.clone(),
         ));
-        let server = Server::<_, MemTableDB>::new(
+        let server = Server::<_>::new(
             config,
             host_info,
             storage,

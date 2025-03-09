@@ -23,7 +23,7 @@ use crate::range_manager::r#impl::RangeManager;
 use crate::range_manager::RangeManager as RangeManagerTrait;
 use crate::warden_handler::WardenHandler;
 use crate::{
-    cache::Cache, cache::CacheOptions, epoch_supplier::EpochSupplier, error::Error,
+    epoch_supplier::EpochSupplier, error::Error,
     for_testing::in_memory_wal::InMemoryWal, storage::Storage,
 };
 use flatbuf::rangeserver_flatbuffers::range_server::TransactionInfo as FlatbufTransactionInfo;
@@ -35,19 +35,17 @@ use proto::rangeserver::{PrefetchRequest, PrefetchResponse};
 use crate::prefetching_buffer::PrefetchingBuffer;
 
 #[derive(Clone)]
-struct ProtoServer<S, C>
+struct ProtoServer<S>
 where
     S: Storage,
-    C: Cache,
 {
-    parent_server: Arc<Server<S, C>>,
+    parent_server: Arc<Server<S>>,
 }
 
 #[tonic::async_trait]
-impl<S, C> RangeServer for ProtoServer<S, C>
+impl<S> RangeServer for ProtoServer<S>
 where
     S: Storage,
-    C: Cache,
 {
     async fn prefetch(
         &self,
@@ -96,10 +94,9 @@ where
     }
 }
 
-pub struct Server<S, C>
+pub struct Server<S>
 where
     S: Storage,
-    C: Cache,
 {
     config: Config,
     storage: Arc<S>,
@@ -107,17 +104,16 @@ where
     warden_handler: WardenHandler,
     bg_runtime: tokio::runtime::Handle,
     // TODO: parameterize the WAL implementation too.
-    loaded_ranges: RwLock<HashMap<Uuid, Arc<RangeManager<S, InMemoryWal, C>>>>,
+    loaded_ranges: RwLock<HashMap<Uuid, Arc<RangeManager<S, InMemoryWal>>>>,
     transaction_table: RwLock<HashMap<Uuid, Arc<TransactionInfo>>>,
     prefetching_buffer: Arc<PrefetchingBuffer>,
 }
 
 type DynamicErr = Box<dyn std::error::Error + Sync + Send + 'static>;
 
-impl<S, C> Server<S, C>
+impl<S> Server<S>
 where
     S: Storage,
-    C: Cache,
 {
     pub fn new(
         config: Config,
@@ -184,7 +180,7 @@ where
     async fn maybe_load_and_get_range_inner(
         &self,
         id: &FullRangeId,
-    ) -> Result<Arc<RangeManager<S, InMemoryWal, C>>, Error> {
+    ) -> Result<Arc<RangeManager<S, InMemoryWal>>, Error> {
         {
             // Fast path when range has already been loaded.
             let range_table = self.loaded_ranges.read().await;
@@ -212,7 +208,6 @@ where
                         self.storage.clone(),
                         self.epoch_supplier.clone(),
                         InMemoryWal::new(),
-                        C::new(CacheOptions::default()).await,
                         self.prefetching_buffer.clone(),
                         self.bg_runtime.clone(),
                     );
@@ -229,7 +224,7 @@ where
     async fn maybe_load_and_get_range(
         &self,
         id: &FullRangeId,
-    ) -> Result<Arc<RangeManager<S, InMemoryWal, C>>, Error> {
+    ) -> Result<Arc<RangeManager<S, InMemoryWal>>, Error> {
         let res = self.maybe_load_and_get_range_inner(id).await;
         match res {
             Ok(_) => (),
@@ -739,7 +734,6 @@ where
 
 #[cfg(test)]
 pub mod tests {
-    use crate::cache::memtabledb::MemTableDB;
     use crate::epoch_supplier::EpochSupplier as Trait;
     use common::config::{
         CassandraConfig, EpochConfig, FrontendConfig, HostPort, RangeServerConfig, RegionConfig,
@@ -758,7 +752,7 @@ pub mod tests {
     use crate::for_testing::epoch_supplier::EpochSupplier;
     use crate::for_testing::mock_warden::MockWarden;
     use crate::storage::cassandra::Cassandra;
-    type Server = super::Server<Cassandra, MemTableDB>;
+    type Server = super::Server<Cassandra>;
 
     impl Server {
         async fn is_assigned(&self, range_id: &FullRangeId) -> bool {

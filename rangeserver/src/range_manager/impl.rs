@@ -1,7 +1,7 @@
 use super::{GetResult, PrepareResult, RangeManager as Trait};
 
 use crate::{
-    cache::Cache, epoch_supplier::EpochSupplier, error::Error, key_version::KeyVersion,
+    epoch_supplier::EpochSupplier, error::Error, key_version::KeyVersion,
     range_manager::lock_table, storage::RangeInfo, storage::Storage,
     transaction_abort_reason::TransactionAbortReason, wal::Wal,
 };
@@ -38,29 +38,26 @@ enum State {
     Unloaded,
 }
 
-pub struct RangeManager<S, W, C>
+pub struct RangeManager<S, W>
 where
     S: Storage,
     W: Wal,
-    C: Cache,
 {
     range_id: FullRangeId,
     config: Config,
     storage: Arc<S>,
     epoch_supplier: Arc<dyn EpochSupplier>,
     wal: Arc<W>,
-    cache: Arc<RwLock<C>>,
     state: Arc<RwLock<State>>,
     prefetching_buffer: Arc<PrefetchingBuffer>,
     bg_runtime: tokio::runtime::Handle,
 }
 
 #[async_trait]
-impl<S, W, C> Trait for RangeManager<S, W, C>
+impl<S, W> Trait for RangeManager<S, W>
 where
     S: Storage,
     W: Wal,
-    C: Cache,
 {
     async fn load(&self) -> Result<(), Error> {
         let sender = {
@@ -159,36 +156,24 @@ where
                     leader_sequence_number: state.range_info.leader_sequence_number as i64,
                 };
 
-                // check cache first
-                let (value, _epoch) = self
-                    .cache
-                    .read()
+                // check prefetch buffer
+                let value = self
+                    .prefetching_buffer
+                    .get_from_buffer(key.clone())
                     .await
-                    .get(key.clone(), None)
-                    .await
-                    .unwrap();
-
+                    .map_err(|_| Error::PrefetchError)?;
                 if let Some(val) = value {
                     get_result.val = Some(val);
                 } else {
-                    // check prefetch buffer
-                    let value = self
-                        .prefetching_buffer
-                        .get_from_buffer(key.clone())
+                    let val = self
+                        .storage
+                        .get(self.range_id, key.clone())
                         .await
-                        .map_err(|_| Error::PrefetchError)?;
-                    if let Some(val) = value {
-                        get_result.val = Some(val);
-                    } else {
-                        let val = self
-                            .storage
-                            .get(self.range_id, key.clone())
-                            .await
-                            .map_err(Error::from_storage_error)?;
+                        .map_err(Error::from_storage_error)?;
 
-                        get_result.val = val.clone();
-                    }
+                    get_result.val = val.clone();
                 }
+                
                 Ok(get_result)
             }
         }
@@ -332,7 +317,6 @@ where
                 // We should also add retries in case of intermittent failures. Note that all our
                 // storage operations here are idempotent and safe to retry any number of times.
                 for put in prepare_record.puts().iter() {
-                    let mut cache_wg = self.cache.write().await;
                     for put in put.iter() {
                         // TODO: too much copying :(
                         let key = Bytes::copy_from_slice(put.key().unwrap().k().unwrap().bytes());
@@ -344,17 +328,11 @@ where
                             .await
                             .map_err(Error::from_storage_error)?;
 
-                        cache_wg
-                            .upsert(key.clone(), val.clone(), version.epoch)
-                            .await
-                            .map_err(Error::from_cache_error)?;
-
                         // Update the prefetch buffer if this key has been requested by a prefetch call
                         self.prefetching_buffer.upsert(key, val).await;
                     }
                 }
                 for del in prepare_record.deletes().iter() {
-                    let mut cache_wg = self.cache.write().await;
                     for del in del.iter() {
                         let key = Bytes::copy_from_slice(del.k().unwrap().bytes());
 
@@ -363,11 +341,6 @@ where
                             .delete(self.range_id, key.clone(), version)
                             .await
                             .map_err(Error::from_storage_error)?;
-
-                        cache_wg
-                            .delete(key.clone(), version.epoch)
-                            .await
-                            .map_err(Error::from_cache_error)?;
 
                         // Delete the key from the prefetch buffer if this key has been requested by a prefetch call
                         self.prefetching_buffer.delete(key).await;
@@ -388,11 +361,10 @@ where
     }
 }
 
-impl<S, W, C> RangeManager<S, W, C>
+impl<S, W> RangeManager<S, W>
 where
     S: Storage,
     W: Wal,
-    C: Cache,
 {
     pub fn new(
         range_id: FullRangeId,
@@ -400,7 +372,6 @@ where
         storage: Arc<S>,
         epoch_supplier: Arc<dyn EpochSupplier>,
         wal: W,
-        cache: C,
         prefetching_buffer: Arc<PrefetchingBuffer>,
         bg_runtime: tokio::runtime::Handle,
     ) -> Arc<Self> {
@@ -410,7 +381,6 @@ where
             storage,
             epoch_supplier,
             wal: Arc::new(wal),
-            cache: Arc::new(RwLock::new(cache)),
             state: Arc::new(RwLock::new(State::NotLoaded)),
             prefetching_buffer,
             bg_runtime,
@@ -579,13 +549,11 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::cache::memtabledb::MemTableDB;
-    use crate::cache::CacheOptions;
     use crate::for_testing::epoch_supplier::EpochSupplier;
     use crate::for_testing::in_memory_wal::InMemoryWal;
     use crate::storage::cassandra::Cassandra;
 
-    type RM = RangeManager<Cassandra, InMemoryWal, MemTableDB>;
+    type RM = RangeManager<Cassandra, InMemoryWal>;
 
     impl RM {
         async fn abort_transaction(&self, tx: Arc<TransactionInfo>) {
@@ -707,7 +675,6 @@ mod tests {
         let storage_context: crate::storage::cassandra::for_testing::TestContext =
             crate::storage::cassandra::for_testing::init().await;
         let cassandra = storage_context.cassandra.clone();
-        let cache = Arc::new(RwLock::new(MemTableDB::new(CacheOptions::default()).await));
         let prefetching_buffer = Arc::new(PrefetchingBuffer::new());
         let range_id = FullRangeId {
             keyspace_id: storage_context.keyspace_id,
@@ -745,7 +712,6 @@ mod tests {
             config,
             storage: cassandra,
             wal: Arc::new(InMemoryWal::new()),
-            cache,
             epoch_supplier: epoch_supplier.clone(),
             state: Arc::new(RwLock::new(State::NotLoaded)),
             prefetching_buffer,
