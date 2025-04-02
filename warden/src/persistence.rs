@@ -2,10 +2,8 @@ pub mod cassandra;
 
 use std::sync::Arc;
 
-use common::{full_range_id::FullRangeId, key_range::KeyRange, keyspace_id::KeyspaceId};
-use scylla::{
-    query::Query, statement::SerialConsistency, FromRow, SerializeRow, Session, SessionBuilder,
-};
+use common::{key_range::KeyRange, keyspace_id::KeyspaceId, range_type::RangeType};
+
 use thiserror::Error;
 use tracing::info;
 use uuid::Uuid;
@@ -15,6 +13,7 @@ pub struct RangeInfo {
     pub keyspace_id: KeyspaceId,
     pub id: Uuid,
     pub key_range: KeyRange,
+    pub range_type: RangeType,
 }
 
 #[derive(Debug)]

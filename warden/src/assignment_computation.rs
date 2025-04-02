@@ -7,6 +7,7 @@ use std::{collections::HashSet, ops::Deref, sync::Mutex};
 use bytes::Bytes;
 use common::host_info::HostInfo;
 use common::key_range::KeyRange;
+use common::range_type::RangeType;
 use common::region::Region;
 use proto::universe::universe_client::UniverseClient;
 use proto::universe::ListKeyspacesRequest;
@@ -130,6 +131,7 @@ impl AssignmentComputationImpl {
             }
         });
     }
+
     pub async fn read_base_ranges(&self) -> Result<(), tonic::Status> {
         let request = tonic::Request::new(ListKeyspacesRequest {
             region: Some(self.region.clone().into()),
@@ -142,8 +144,8 @@ impl AssignmentComputationImpl {
         let key_spaces = response.into_inner().keyspaces;
 
         let mut base_ranges = Vec::new();
-        for keyspace in key_spaces {
-            for range in keyspace.base_key_ranges {
+        for keyspace in key_spaces.iter() {
+            for range in keyspace.base_key_ranges.iter() {
                 base_ranges.push(RangeInfo {
                     keyspace_id: common::keyspace_id::KeyspaceId {
                         id: Uuid::parse_str(&keyspace.keyspace_id)
@@ -155,17 +157,48 @@ impl AssignmentComputationImpl {
                         lower_bound_inclusive: if range.lower_bound_inclusive.is_empty() {
                             None
                         } else {
-                            Some(Bytes::from(range.lower_bound_inclusive))
+                            Some(Bytes::from(range.lower_bound_inclusive.clone()))
                         },
                         upper_bound_exclusive: if range.upper_bound_exclusive.is_empty() {
                             None
                         } else {
-                            Some(Bytes::from(range.upper_bound_exclusive))
+                            Some(Bytes::from(range.upper_bound_exclusive.clone()))
                         },
                     },
+                    range_type: RangeType::Primary,
                 });
             }
         }
+        // Create secondary ranges for keyspaces with secondary zones in this region
+        let secondary_base_ranges: Vec<RangeInfo> = key_spaces
+            .iter()
+            .flat_map(|k| {
+                k.secondary_key_ranges.iter().map(|zkr| {
+                    let range = zkr.key_range.as_ref().unwrap();
+                    RangeInfo {
+                        keyspace_id: common::keyspace_id::KeyspaceId {
+                            id: Uuid::parse_str(&k.keyspace_id).unwrap(),
+                        },
+                        id: Uuid::parse_str(&range.base_range_uuid).unwrap(),
+                        key_range: KeyRange {
+                            lower_bound_inclusive: if range.lower_bound_inclusive.is_empty() {
+                                None
+                            } else {
+                                Some(Bytes::from(range.lower_bound_inclusive.clone()))
+                            },
+                            upper_bound_exclusive: if range.upper_bound_exclusive.is_empty() {
+                                None
+                            } else {
+                                Some(Bytes::from(range.upper_bound_exclusive.clone()))
+                            },
+                        },
+                        range_type: RangeType::Secondary,
+                    }
+                })
+            })
+            .collect();
+        base_ranges.extend(secondary_base_ranges);
+
         let mut new_base_ranges = vec![];
         {
             let mut l = self.base_ranges.lock().unwrap();
@@ -491,6 +524,7 @@ mod tests {
                 upper_bound_exclusive: Some(Bytes::from(vec![end])),
             },
             id: Uuid::new_v4(),
+            range_type: RangeType::Primary,
         }
     }
 
@@ -537,13 +571,7 @@ mod tests {
                         }),
                         name: "test_zone".to_string(),
                     }),
-                    secondary_zones: vec![proto::universe::Zone {
-                        region: Some(proto::universe::Region {
-                            cloud: None,
-                            name: "test".to_string(),
-                        }),
-                        name: "test_zone_secondary".to_string(),
-                    }],
+                    secondary_zones: vec![],
                     base_key_ranges: self
                         .base_ranges
                         .lock()
@@ -565,6 +593,7 @@ mod tests {
                             base_range_uuid: range.id.to_string(),
                         })
                         .collect(),
+                    secondary_key_ranges: vec![],
                 }],
             }))
         }

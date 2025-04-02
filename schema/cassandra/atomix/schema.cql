@@ -25,6 +25,7 @@ CREATE TYPE epoch_range (
 
 CREATE TABLE range_leases (
   range_id                     uuid,
+  range_type                   text,
   key_lower_bound_inclusive    blob,
   key_upper_bound_exclusive    blob,
   leader_sequence_number       bigint,

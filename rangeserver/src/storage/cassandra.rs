@@ -1,6 +1,7 @@
 use super::*;
 use bytes::Bytes;
 use common::full_range_id::FullRangeId;
+use common::range_type::RangeType;
 
 use scylla::frame::value::Unset;
 use scylla::macros::FromUserType;
@@ -25,6 +26,7 @@ struct CqlEpochRange {
 #[derive(Debug, FromRow, ValueList)]
 struct CqlRangeLease {
     range_id: Uuid,
+    range_type: RangeType,
     epoch_lease: CqlEpochRange,
     key_lower_bound_inclusive: Option<Vec<u8>>,
     key_upper_bound_exclusive: Option<Vec<u8>>,
@@ -63,19 +65,19 @@ static GET_RANGE_LEASE_QUERY: &str = r#"
 
 static ACQUIRE_RANGE_LEASE_QUERY: &str = r#"
   UPDATE atomix.range_leases SET leader_sequence_number = ?
-    WHERE range_id = ? 
-    IF leader_sequence_number = ? 
+    WHERE range_id = ?
+    IF leader_sequence_number = ?
 "#;
 
 static RENEW_EPOCH_LEASE_QUERY: &str = r#"
   UPDATE atomix.range_leases SET epoch_lease = ?
-    WHERE range_id = ? 
-    IF leader_sequence_number = ? 
+    WHERE range_id = ?
+    IF leader_sequence_number = ?
 "#;
 
 static UPSERT_QUERY: &str = r#"
-  INSERT INTO atomix.records (range_id, key, value, epoch, is_tombstone) 
-    VALUES (?, ?, ?, ?, ?) 
+  INSERT INTO atomix.records (range_id, key, value, epoch, is_tombstone)
+    VALUES (?, ?, ?, ?, ?)
     USING TIMESTAMP ?
 "#;
 
@@ -161,6 +163,7 @@ impl Storage for Cassandra {
         } else {
             Ok(RangeInfo {
                 id: range_id.range_id,
+                range_type: cql_lease.range_type.clone(),
                 leader_sequence_number: new_leader_sequence_number as u64,
                 epoch_lease: (
                     cql_lease.epoch_lease.lower_bound_inclusive as u64,
@@ -323,6 +326,7 @@ pub mod for_testing {
         let range_id = Uuid::new_v4();
         let cql_range = CqlRangeLease {
             range_id,
+            range_type: RangeType::Primary,
             leader_sequence_number: 0,
             key_lower_bound_inclusive: None,
             key_upper_bound_exclusive: None,

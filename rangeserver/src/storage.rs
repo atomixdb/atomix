@@ -6,6 +6,7 @@ use crate::key_version::KeyVersion;
 use bytes::Bytes;
 use common::full_range_id::FullRangeId;
 use common::key_range::KeyRange;
+use common::range_type::RangeType;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -16,6 +17,7 @@ pub struct RangeInfo {
     pub key_range: KeyRange,
     pub leader_sequence_number: u64,
     pub epoch_lease: EpochLease,
+    pub range_type: RangeType,
 }
 
 #[derive(Clone, Debug, Error)]

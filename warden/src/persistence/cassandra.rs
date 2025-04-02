@@ -111,6 +111,7 @@ impl Persistence for Cassandra {
                     query,
                     (
                         range.id,
+                        range.range_type.clone(),
                         range
                             .key_range
                             .lower_bound_inclusive

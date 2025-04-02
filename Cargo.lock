@@ -384,6 +384,7 @@ dependencies = [
  "flatbuf",
  "flatbuffers",
  "proto",
+ "scylla 0.13.2",
  "serde",
  "tokio",
  "tracing",

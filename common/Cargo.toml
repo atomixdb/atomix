@@ -17,3 +17,4 @@ serde = { version = "1.0.210", features = ["derive"] }
 tracing = "0.1.40"
 async-trait = "0.1.83"
 chrono = "0.4.38"
+scylla = "0.13.2"

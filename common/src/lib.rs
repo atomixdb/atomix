@@ -8,6 +8,7 @@ pub mod keyspace;
 pub mod keyspace_id;
 pub mod membership;
 pub mod network;
+pub mod range_type;
 pub mod record;
 pub mod region;
 pub mod transaction_info;
