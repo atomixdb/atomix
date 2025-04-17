@@ -23,8 +23,8 @@ use crate::range_manager::r#impl::RangeManager;
 use crate::range_manager::RangeManager as RangeManagerTrait;
 use crate::warden_handler::WardenHandler;
 use crate::{
-    epoch_supplier::EpochSupplier, error::Error,
-    for_testing::in_memory_wal::InMemoryWal, storage::Storage,
+    epoch_supplier::EpochSupplier, error::Error, for_testing::in_memory_wal::InMemoryWal,
+    storage::Storage,
 };
 use flatbuf::rangeserver_flatbuffers::range_server::TransactionInfo as FlatbufTransactionInfo;
 use flatbuf::rangeserver_flatbuffers::range_server::*;

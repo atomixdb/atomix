@@ -161,8 +161,11 @@ impl Storage for Cassandra {
         } else {
             //  Epoch lease may not be initialized yet. Must be renewed.
             let (epoch_lease_lower_bound, epoch_lease_upper_bound) = match cql_lease.epoch_lease {
-                Some(ref epoch_lease) => (epoch_lease.lower_bound_inclusive as u64, epoch_lease.upper_bound_inclusive as u64),
-                None => (0, 0)
+                Some(ref epoch_lease) => (
+                    epoch_lease.lower_bound_inclusive as u64,
+                    epoch_lease.upper_bound_inclusive as u64,
+                ),
+                None => (0, 0),
             };
             Ok(RangeInfo {
                 id: range_id.range_id,
