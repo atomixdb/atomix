@@ -282,7 +282,11 @@ impl AssignmentComputationImpl {
         for added_server in added_servers {
             server_heap.push(Reverse((0, added_server.identity.name.clone())));
         }
-
+        if server_heap.is_empty() {
+            for server in &new_ready_servers {
+                server_heap.push(Reverse((0, server.identity.name.clone())));
+            }
+        }
         // TODO(purujit): Put the removed servers in quarantine for a few seconds, they might come back.
         // Reassign the ranges from the removed servers to the current servers starting from the least loaded.
         // Also, assign any newly added base ranges.
