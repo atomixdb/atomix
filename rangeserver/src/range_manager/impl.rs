@@ -173,7 +173,7 @@ where
 
                     get_result.val = val.clone();
                 }
-                
+
                 Ok(get_result)
             }
         }
@@ -402,7 +402,7 @@ where
                     .read_epoch()
                     .await
                     .map_err(Error::from_epoch_supplier_error)?;
-                let range_info = storage
+                let mut range_info = storage
                     .take_ownership_and_load_range(range_id)
                     .await
                     .map_err(Error::from_storage_error)?;
@@ -426,6 +426,7 @@ where
                     )
                     .await
                     .map_err(Error::from_storage_error)?;
+                range_info.epoch_lease = (new_epoch_lease_lower_bound, new_epoch_lease_upper_bound);
                 wal.sync().await.map_err(Error::from_wal_error)?;
                 // Create a recurrent task to renew.
                 bg_runtime.spawn(async move {
