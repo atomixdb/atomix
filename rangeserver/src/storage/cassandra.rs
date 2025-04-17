@@ -28,7 +28,7 @@ struct CqlRangeLease {
     epoch_lease: Option<CqlEpochRange>,
     key_lower_bound_inclusive: Option<Vec<u8>>,
     key_upper_bound_exclusive: Option<Vec<u8>>,
-    leader_sequence_number: Option<i64>,
+    leader_sequence_number: i64,
     safe_snapshot_epochs: Option<CqlEpochRange>,
 }
 
@@ -138,10 +138,7 @@ impl Storage for Cassandra {
         range_id: FullRangeId,
     ) -> Result<RangeInfo, Error> {
         let cql_lease = self.get_range_lease(range_id).await?;
-        let prev_leader_sequence_number = match cql_lease.leader_sequence_number {
-            Some(prev_leader_sequence_number) => prev_leader_sequence_number,
-            None => 0,
-        };
+        let prev_leader_sequence_number = cql_lease.leader_sequence_number;
         let new_leader_sequence_number = prev_leader_sequence_number + 1;
         let _ = self
             .session
@@ -159,9 +156,10 @@ impl Storage for Cassandra {
         // We must read the lease again after we've taken ownership to ensure we get its most up-to-date info.
         // Otherwise, the previous owner could have updated the lease between looking it up and owning it.
         let cql_lease = self.get_range_lease(range_id).await?;
-        if cql_lease.leader_sequence_number != Some(new_leader_sequence_number as i64) {
+        if cql_lease.leader_sequence_number != new_leader_sequence_number {
             Err(Error::RangeOwnershipLost)
         } else {
+            //  Epoch lease may not be initialized yet. Must be renewed.
             let (epoch_lease_lower_bound, epoch_lease_upper_bound) = match cql_lease.epoch_lease {
                 Some(ref epoch_lease) => (epoch_lease.lower_bound_inclusive as u64, epoch_lease.upper_bound_inclusive as u64),
                 None => (0, 0)
@@ -201,7 +199,7 @@ impl Storage for Cassandra {
         // took effect or not. To support both, we just do a serial read and see what actually happened.
         // We should revisit this approach at some point though.
         let cql_lease = self.get_range_lease(range_id).await?;
-        if cql_lease.leader_sequence_number != Some(leader_sequence_number as i64) {
+        if cql_lease.leader_sequence_number != leader_sequence_number as i64 {
             Err(Error::RangeOwnershipLost)
         } else {
             Ok(())
@@ -327,7 +325,7 @@ pub mod for_testing {
         let range_id = Uuid::new_v4();
         let cql_range = CqlRangeLease {
             range_id,
-            leader_sequence_number: Some(0),
+            leader_sequence_number: 0,
             key_lower_bound_inclusive: None,
             key_upper_bound_exclusive: None,
             epoch_lease: Some(CqlEpochRange {

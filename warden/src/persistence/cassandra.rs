@@ -35,8 +35,8 @@ impl Cassandra {
 }
 
 static INSERT_INTO_RANGE_LEASE_QUERY: &str = r#"
-  INSERT INTO atomix.range_leases(range_id, key_lower_bound_inclusive, key_upper_bound_exclusive)
-    VALUES (?, ?, ?)
+  INSERT INTO atomix.range_leases(range_id, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number)
+    VALUES (?, ?, ?, ?)
     IF NOT EXISTS
 "#;
 
@@ -114,6 +114,7 @@ impl Persistence for Cassandra {
                             .upper_bound_exclusive
                             .clone()
                             .map_or(vec![], |v| v.to_vec()),
+                        0 as i64,
                     ),
                 )
                 .await
