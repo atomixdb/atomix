@@ -25,11 +25,11 @@ struct CqlEpochRange {
 #[derive(Debug, FromRow, ValueList)]
 struct CqlRangeLease {
     range_id: Uuid,
-    epoch_lease: Option<CqlEpochRange>,
+    epoch_lease: CqlEpochRange,
     key_lower_bound_inclusive: Option<Vec<u8>>,
     key_upper_bound_exclusive: Option<Vec<u8>>,
     leader_sequence_number: i64,
-    safe_snapshot_epochs: Option<CqlEpochRange>,
+    safe_snapshot_epochs: CqlEpochRange,
 }
 
 #[derive(Debug, FromRow)]
@@ -159,18 +159,13 @@ impl Storage for Cassandra {
         if cql_lease.leader_sequence_number != new_leader_sequence_number {
             Err(Error::RangeOwnershipLost)
         } else {
-            //  Epoch lease may not be initialized yet. Must be renewed.
-            let (epoch_lease_lower_bound, epoch_lease_upper_bound) = match cql_lease.epoch_lease {
-                Some(ref epoch_lease) => (
-                    epoch_lease.lower_bound_inclusive as u64,
-                    epoch_lease.upper_bound_inclusive as u64,
-                ),
-                None => (0, 0),
-            };
             Ok(RangeInfo {
                 id: range_id.range_id,
                 leader_sequence_number: new_leader_sequence_number as u64,
-                epoch_lease: (epoch_lease_lower_bound, epoch_lease_upper_bound),
+                epoch_lease: (
+                    cql_lease.epoch_lease.lower_bound_inclusive as u64,
+                    cql_lease.epoch_lease.upper_bound_inclusive as u64,
+                ),
                 key_range: cql_lease.key_range(),
             })
         }
@@ -202,7 +197,7 @@ impl Storage for Cassandra {
         // took effect or not. To support both, we just do a serial read and see what actually happened.
         // We should revisit this approach at some point though.
         let cql_lease = self.get_range_lease(range_id).await?;
-        if cql_lease.leader_sequence_number != leader_sequence_number as i64 {
+        if cql_lease.leader_sequence_number != (leader_sequence_number as i64) {
             Err(Error::RangeOwnershipLost)
         } else {
             Ok(())
@@ -331,14 +326,14 @@ pub mod for_testing {
             leader_sequence_number: 0,
             key_lower_bound_inclusive: None,
             key_upper_bound_exclusive: None,
-            epoch_lease: Some(CqlEpochRange {
+            epoch_lease: CqlEpochRange {
                 lower_bound_inclusive: 0,
                 upper_bound_inclusive: 0,
-            }),
-            safe_snapshot_epochs: Some(CqlEpochRange {
+            },
+            safe_snapshot_epochs: CqlEpochRange {
                 lower_bound_inclusive: 1,
                 upper_bound_inclusive: 0,
-            }),
+            },
         };
         cassandra
             .session

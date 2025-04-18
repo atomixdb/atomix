@@ -3,10 +3,17 @@ use std::sync::Arc;
 
 use common::keyspace_id::KeyspaceId;
 use scylla::{
-    query::Query, statement::SerialConsistency, FromRow, SerializeRow, Session, SessionBuilder,
+    query::Query, statement::SerialConsistency, FromRow, FromUserType, IntoUserType, SerializeCql,
+    SerializeRow, Session, SessionBuilder,
 };
 use tracing::info;
 use uuid::Uuid;
+
+#[derive(Debug, FromUserType, IntoUserType, SerializeCql)]
+struct CqlEpochRange {
+    lower_bound_inclusive: i64,
+    upper_bound_inclusive: i64,
+}
 
 #[derive(Debug, FromRow, SerializeRow)]
 struct SerializedRangeAssignment {
@@ -35,8 +42,8 @@ impl Cassandra {
 }
 
 static INSERT_INTO_RANGE_LEASE_QUERY: &str = r#"
-  INSERT INTO atomix.range_leases(range_id, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number)
-    VALUES (?, ?, ?, ?)
+  INSERT INTO atomix.range_leases(range_id, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs)
+    VALUES (?, ?, ?, ?, ?, ?)
     IF NOT EXISTS
 "#;
 
@@ -115,6 +122,14 @@ impl Persistence for Cassandra {
                             .clone()
                             .map_or(vec![], |v| v.to_vec()),
                         0 as i64,
+                        CqlEpochRange {
+                            lower_bound_inclusive: 0,
+                            upper_bound_inclusive: 0,
+                        },
+                        CqlEpochRange {
+                            lower_bound_inclusive: 0,
+                            upper_bound_inclusive: 0,
+                        },
                     ),
                 )
                 .await
