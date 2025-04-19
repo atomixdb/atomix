@@ -147,10 +147,11 @@ where
                     };
                 }
                 // If we got here then we updated all the broadcaster sets, we can advance the epoch.
-                let next_update_in = chrono::TimeDelta::min(chrono::TimeDelta::zero(), (last_update + server.config.epoch.epoch_duration) - chrono::Utc::now()).to_std().unwrap();
+                let next_update_in = chrono::TimeDelta::max(chrono::TimeDelta::zero(), (last_update + server.config.epoch.epoch_duration) - chrono::Utc::now()).to_std().unwrap();
                 tokio::time::sleep(next_update_in).await;
                 if let Err(e) = server.storage.conditional_update(epoch + 1, epoch).await {
                     error!("Failed to increment epoch. Error: {}", e);
+                    continue 'outer;
                 }
                 last_update = chrono::Utc::now();
             }
