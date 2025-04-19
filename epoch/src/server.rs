@@ -103,6 +103,7 @@ where
 
     fn start_update_loop(server: Arc<Server<S>>, cancellation_token: CancellationToken) {
         tokio::spawn(async move {
+            let mut last_update = chrono::Utc::now() - server.config.epoch.epoch_duration;
             'outer: loop {
                 if cancellation_token.is_cancelled() {
                     info!("Update loop cancelled, exiting.");
@@ -146,9 +147,12 @@ where
                     };
                 }
                 // If we got here then we updated all the broadcaster sets, we can advance the epoch.
+                let next_update_in = chrono::TimeDelta::min(chrono::TimeDelta::zero(), (last_update + server.config.epoch.epoch_duration) - chrono::Utc::now()).to_std().unwrap();
+                tokio::time::sleep(next_update_in).await;
                 if let Err(e) = server.storage.conditional_update(epoch + 1, epoch).await {
                     error!("Failed to increment epoch. Error: {}", e);
                 }
+                last_update = chrono::Utc::now();
             }
         });
     }

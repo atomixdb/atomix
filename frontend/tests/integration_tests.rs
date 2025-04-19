@@ -60,6 +60,7 @@ async fn init_config() -> Config {
     let epoch_config = EpochConfig {
         // Not used in these tests.
         proto_server_addr: "127.0.0.1:1".parse().unwrap(),
+        epoch_duration: time::Duration::from_millis(10),
     };
     let mut config = Config {
         range_server: RangeServerConfig {

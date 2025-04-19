@@ -44,6 +44,7 @@ fn get_config(epoch_address: SocketAddr) -> Config {
     let epoch_config = EpochConfig {
         // Not used in these tests.
         proto_server_addr: HostPort::from_socket_addr(epoch_address),
+        epoch_duration: time::Duration::from_millis(10),
     };
     let mut config = Config {
         range_server: RangeServerConfig {

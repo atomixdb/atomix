@@ -417,7 +417,7 @@ where
                 let highest_known_epoch = epoch + 1;
                 let new_epoch_lease_lower_bound =
                     std::cmp::max(highest_known_epoch, range_info.epoch_lease.1 + 1);
-                let new_epoch_lease_upper_bound = new_epoch_lease_lower_bound + 10;
+                let new_epoch_lease_upper_bound = new_epoch_lease_lower_bound + 100;
                 storage
                     .renew_epoch_lease(
                         range_id,
@@ -476,7 +476,7 @@ where
             // We should probably limit the max number of epochs in the future
             // we can request a lease for.
             let new_epoch_lease_lower_bound = std::cmp::max(highest_known_epoch, old_lease.1 + 1);
-            let new_epoch_lease_upper_bound = new_epoch_lease_lower_bound + 10;
+            let new_epoch_lease_upper_bound = new_epoch_lease_lower_bound + 100;
             // TODO: We should handle some errors here. For example:
             // - If the error seems transient (e.g., a timeout), we should retry.
             // - If the error is something like RangeOwnershipLost, we should unload the range.
@@ -683,6 +683,7 @@ mod tests {
         let epoch_config = EpochConfig {
             // Not used in these tests.
             proto_server_addr: "127.0.0.1:50052".parse().unwrap(),
+            epoch_duration: time::Duration::from_millis(10),
         };
         let config = Config {
             range_server: RangeServerConfig {
