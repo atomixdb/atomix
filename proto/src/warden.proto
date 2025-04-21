@@ -1,10 +1,29 @@
 syntax = "proto3";
 package warden;
 
+enum RangeType {
+    PRIMARY = 0;
+    SECONDARY = 1;
+}
+
 message RangeId {
     // This is the Uuid of the keyspace.
     string keyspace_id = 1;
     string range_id = 2;
+}
+
+// We need the type of the range because primary and secondary ranges are
+// handled differently. Primary ranges serve client requests, while secondary
+// ranges serve client stale reads and replication traffic.
+message RangeIdAndType {
+    RangeId range = 1;
+    RangeType type = 2;
+}
+
+message ReplicationMapping {
+    RangeId primary_range = 1;
+    RangeId secondary_range = 2;
+    string  assignee = 3;
 }
 
 message HostInfo {
@@ -30,7 +49,8 @@ service Warden {
 // that the range server is responsible for.
 message FullAssignment {
    int64 version = 1;
-   repeated RangeId range = 2;
+   repeated RangeIdAndType range = 2;
+   repeated ReplicationMapping replication_mapping = 3;
 }
 
 // An incremental assignment of ranges to a range server. The monotonically increasing version field indicates the
@@ -41,8 +61,10 @@ message FullAssignment {
 message IncrementalAssignment {
     int64 version = 1;
     int64 previous_version = 2;
-    repeated RangeId load = 3;
-    repeated RangeId unload = 4;
+    repeated RangeIdAndType load = 3;
+    repeated RangeIdAndType unload = 4;
+    repeated ReplicationMapping load_mapping = 5;
+    repeated ReplicationMapping unload_mapping = 6;
 }
 
 message WardenUpdate {

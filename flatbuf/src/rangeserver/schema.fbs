@@ -47,7 +47,7 @@ table GetRequest {
   request_id:Uuidu128;
   transaction_id:Uuidu128;
   // only sent on the first request a transaction makes.
-  transaction_info:TransactionInfo; 
+  transaction_info:TransactionInfo;
   range_id:RangeId;
   keys:[Key];
 }
@@ -99,7 +99,7 @@ table AbortResponse {
   status:Status;
 }
 
-enum Entry:byte { Prepare = 0, Commit, Abort = 2 }
+enum Entry:byte { Prepare = 0, Commit, Abort, ReplicatedCommit = 3 }
 
 table LogEntry {
   entry:Entry;

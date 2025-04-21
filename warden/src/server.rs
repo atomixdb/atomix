@@ -224,6 +224,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+    use common::range_type::RangeType;
     use proto::warden::warden_client::WardenClient;
     use tokio::sync::broadcast::Receiver;
     use tonic::transport::Channel;
@@ -245,10 +246,14 @@ mod tests {
                     update: Some(proto::warden::warden_update::Update::FullAssignment(
                         proto::warden::FullAssignment {
                             version: FULL_UPDATE_VERSION,
-                            range: vec![proto::warden::RangeId {
-                                keyspace_id: "test_keyspace".to_string(),
-                                range_id: "test_range".to_string(),
+                            range: vec![proto::warden::RangeIdAndType {
+                                range: Some(proto::warden::RangeId {
+                                    keyspace_id: "test_keyspace".to_string(),
+                                    range_id: "test_range".to_string(),
+                                }),
+                                r#type: RangeType::Primary as i32,
                             }],
+                            replication_mapping: vec![],
                         },
                     )),
                 },
@@ -257,10 +262,15 @@ mod tests {
                         proto::warden::IncrementalAssignment {
                             version: PARTIAL_UPDATE_VERSION,
                             previous_version: FULL_UPDATE_VERSION,
-                            load: vec![proto::warden::RangeId {
-                                keyspace_id: "test_keyspace".to_string(),
-                                range_id: "test_range".to_string(),
+                            load: vec![proto::warden::RangeIdAndType {
+                                range: Some(proto::warden::RangeId {
+                                    keyspace_id: "test_keyspace".to_string(),
+                                    range_id: "test_range".to_string(),
+                                }),
+                                r#type: RangeType::Primary as i32,
                             }],
+                            load_mapping: vec![],
+                            unload_mapping: vec![],
                             unload: vec![],
                         },
                     )),

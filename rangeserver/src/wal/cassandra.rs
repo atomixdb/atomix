@@ -7,6 +7,7 @@ use crate::for_testing::in_memory_wal::InMemIterator;
 use super::*;
 use async_trait::async_trait;
 use flatbuffers::FlatBufferBuilder;
+use prost::Message;
 use scylla::batch::Batch;
 use scylla::query::Query;
 use scylla::statement::SerialConsistency;
@@ -49,9 +50,9 @@ static SYNC_WAL_QUERY: &str = r#"
 "#;
 
 static UPDATE_FIRST_OFFSET_QUERY: &str = r#"
-    UPDATE atomix.wal SET first_offset = ? 
-      WHERE wal_id = ? and offset = ? 
-      IF first_offset = ? 
+    UPDATE atomix.wal SET first_offset = ?
+      WHERE wal_id = ? and offset = ?
+      IF first_offset = ?
 "#;
 
 static TRIM_LOG_QUERY: &str = r#"
@@ -61,8 +62,8 @@ static TRIM_LOG_QUERY: &str = r#"
 
 static UPDATE_METADATA_QUERY: &str = r#"
     UPDATE atomix.wal SET next_offset = ?, first_offset = ?
-      WHERE wal_id = ? and offset = ? 
-      IF next_offset = ? 
+      WHERE wal_id = ? and offset = ?
+      IF next_offset = ?
 "#;
 
 static APPEND_ENTRY_QUERY: &str = r#"
@@ -250,6 +251,11 @@ impl Wal for CassandraWal {
 
     async fn append_commit(&self, entry: CommitRequest<'_>) -> Result<(), Error> {
         self.append_entry(Entry::Commit, entry._tab.buf()).await
+    }
+
+    async fn append_replicated_commit(&self, entry: ReplicatedCommitRequest) -> Result<(), Error> {
+        self.append_entry(Entry::ReplicatedCommit, entry.encode_to_vec().as_slice())
+            .await
     }
 
     fn iterator(&self) -> InMemIterator {

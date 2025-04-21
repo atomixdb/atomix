@@ -8,7 +8,7 @@ use common::full_range_id::FullRangeId;
 use proto::warden::{
     warden_server::{Warden, WardenServer},
     warden_update::Update::{FullAssignment, IncrementalAssignment},
-    RegisterRangeServerRequest, WardenUpdate,
+    RangeType, RegisterRangeServerRequest, WardenUpdate,
 };
 use tokio::{
     net::TcpListener,
@@ -27,10 +27,13 @@ pub struct MockWarden {
     state: Arc<WardenState>,
 }
 
-fn range_id_proto(range: &FullRangeId) -> proto::warden::RangeId {
-    proto::warden::RangeId {
-        keyspace_id: range.keyspace_id.id.to_string(),
-        range_id: range.range_id.to_string(),
+fn range_id_proto(range: &FullRangeId) -> proto::warden::RangeIdAndType {
+    proto::warden::RangeIdAndType {
+        range: Some(proto::warden::RangeId {
+            keyspace_id: range.keyspace_id.id.to_string(),
+            range_id: range.range_id.to_string(),
+        }),
+        r#type: RangeType::Primary as i32,
     }
 }
 
@@ -89,6 +92,8 @@ impl MockWarden {
                     previous_version: 1,
                     unload: vec![range_proto],
                     load: vec![],
+                    load_mapping: vec![],
+                    unload_mapping: vec![],
                 };
                 let warden_update = WardenUpdate {
                     update: Some(IncrementalAssignment(incremental)),
@@ -120,6 +125,8 @@ impl MockWarden {
             previous_version: 1,
             load: vec![range_proto],
             unload: vec![],
+            load_mapping: vec![],
+            unload_mapping: vec![],
         };
         let warden_update = WardenUpdate {
             update: Some(IncrementalAssignment(incremental)),
@@ -162,6 +169,7 @@ impl Warden for WardenState {
         let full = proto::warden::FullAssignment {
             version: 1,
             range: assigned_ranges,
+            replication_mapping: vec![],
         };
         let warden_update = WardenUpdate {
             update: Some(FullAssignment(full)),

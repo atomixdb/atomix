@@ -1,4 +1,4 @@
-use super::{GetResult, PrepareResult, RangeManager as Trait};
+use super::{GetResult, LoadableRange, PrepareResult, RangeManager as Trait};
 
 use crate::{
     epoch_supplier::EpochSupplier, error::Error, key_version::KeyVersion,
@@ -75,7 +75,7 @@ where
 }
 
 #[async_trait]
-impl<S, W> Trait for RangeManager<S, W>
+impl<S, W> LoadableRange for RangeManager<S, W>
 where
     S: Storage,
     W: Wal,
@@ -132,7 +132,14 @@ where
             State::NotLoaded | State::Loading(_) | State::Loaded(_) => false,
         }
     }
+}
 
+#[async_trait]
+impl<S, W> Trait for RangeManager<S, W>
+where
+    S: Storage,
+    W: Wal,
+{
     async fn prefetch(&self, transaction_id: Uuid, key: Bytes) -> Result<(), Error> {
         // Request prefetch from the prefetching buffer
         let keystate = self

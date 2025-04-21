@@ -5,12 +5,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashSet, ops::Deref, sync::Mutex};
 
 use bytes::Bytes;
+use common::full_range_id::FullRangeId;
 use common::host_info::HostInfo;
 use common::key_range::KeyRange;
+use common::keyspace_id::KeyspaceId;
 use common::range_type::RangeType;
 use common::region::Region;
+use common::replication_mapping::ReplicationMapping;
 use proto::universe::universe_client::UniverseClient;
-use proto::universe::ListKeyspacesRequest;
+use proto::universe::{KeyspaceInfo, ListKeyspacesRequest};
 use proto::warden::{FullAssignment, WardenUpdate};
 use std::cmp::{Ordering, Reverse};
 use std::hash::{Hash, Hasher};
@@ -81,6 +84,7 @@ pub struct AssignmentComputationImpl {
     universe_client: UniverseClient<tonic::transport::Channel>,
     region: Region,
     range_assignments: Mutex<HashMap<i64, Vec<RangeAssignment>>>,
+    replication_mappings: Mutex<Vec<ReplicationMapping>>,
     current_version: Mutex<i64>,
     ready_range_servers: Mutex<HashSet<HostInfoWrapper>>,
     unassigned_base_ranges: Mutex<Vec<RangeInfo>>,
@@ -99,6 +103,7 @@ impl AssignmentComputationImpl {
             universe_client,
             region,
             range_assignments: Mutex::new(HashMap::new()),
+            replication_mappings: Mutex::new(vec![]),
             // TODO(purujit): Use a better sequence generator for version.
             current_version: Mutex::new(
                 SystemTime::now()
@@ -220,6 +225,44 @@ impl AssignmentComputationImpl {
                 }
             }
         }
+
+        // For each primary range that belongs to us:
+        // 1. Get the secondary range for that primary range for each secondary zone.
+        // 2. Create a new ReplicationMapping for each secondary range.
+        let mut replication_mappings = Vec::new();
+        for key_space in key_spaces.iter() {
+            let mut rms = replication_mappings_from_keyspace(key_space);
+            if rms.is_empty() {
+                continue;
+            }
+            // Get the range assignments for the keyspace
+            let keyspace_id = KeyspaceId {
+                id: Uuid::parse_str(&key_space.keyspace_id)
+                    .map_err(|e| tonic::Status::internal(e.to_string()))?,
+            };
+            let range_map = self.persistence.get_keyspace_range_map(&keyspace_id).await;
+
+            // TODO(yanniszark): Cache the assignees from previous calls.
+            // Get the assignee for each replication mapping
+            if let Ok(mut range_map) = range_map {
+                for rm in rms.iter_mut() {
+                    // Find the assignment for the primary range
+                    if let Some(assignment) = range_map
+                        .iter_mut()
+                        .find(|a| a.range.id == rm.primary_range.range_id)
+                    {
+                        rm.assignee = assignment.assignee.clone();
+                    }
+                }
+            } else {
+                error!(
+                    "Failed to get keyspace range map: {:?}",
+                    range_map.err().unwrap()
+                );
+            }
+            replication_mappings.extend(rms);
+        }
+        *self.replication_mappings.lock().unwrap() = replication_mappings;
 
         self.persistence
             .insert_new_ranges(&new_base_ranges)
@@ -406,6 +449,43 @@ impl AssignmentComputationImpl {
     }
 }
 
+fn replication_mappings_from_keyspace(keyspace: &KeyspaceInfo) -> Vec<ReplicationMapping> {
+    // Return a vec of ReplicationMapping.
+    // For each secondary zone:
+    //    For each range:
+    //        Create a ReplicationMapping between the range and the corresponding
+    //        primary range.
+    let mut mappings = Vec::new();
+
+    // For each secondary zone's key ranges
+    for zkr in keyspace.secondary_key_ranges.iter() {
+        let secondary_range = zkr.key_range.as_ref().unwrap();
+
+        // Find the corresponding primary range with matching bounds
+        if let Some(primary_range) = keyspace.base_key_ranges.iter().find(|r| {
+            r.lower_bound_inclusive == secondary_range.lower_bound_inclusive
+                && r.upper_bound_exclusive == secondary_range.upper_bound_exclusive
+        }) {
+            mappings.push(ReplicationMapping {
+                primary_range: FullRangeId {
+                    keyspace_id: KeyspaceId {
+                        id: Uuid::parse_str(&keyspace.keyspace_id).unwrap(),
+                    },
+                    range_id: Uuid::parse_str(&primary_range.base_range_uuid).unwrap(),
+                },
+                secondary_range: FullRangeId {
+                    keyspace_id: KeyspaceId {
+                        id: Uuid::parse_str(&keyspace.keyspace_id).unwrap(),
+                    },
+                    range_id: Uuid::parse_str(&secondary_range.base_range_uuid).unwrap(),
+                },
+                assignee: String::new(),
+            });
+        }
+    }
+    mappings
+}
+
 impl AssignmentComputation for AssignmentComputationImpl {
     fn register_range_server(&self, host_info: HostInfo) -> Result<Receiver<i64>, Status> {
         info!("Registering range server: {:?}.", host_info);
@@ -442,9 +522,12 @@ impl AssignmentComputation for AssignmentComputationImpl {
                 let assigned_ranges: Vec<_> = range_assignments
                     .iter()
                     .filter(|r| r.assignee == host_info.identity.name)
-                    .map(|r| proto::warden::RangeId {
-                        keyspace_id: r.range.keyspace_id.id.to_string(),
-                        range_id: r.range.id.to_string(),
+                    .map(|r| proto::warden::RangeIdAndType {
+                        range: Some(proto::warden::RangeId {
+                            keyspace_id: r.range.keyspace_id.id.to_string(),
+                            range_id: r.range.id.to_string(),
+                        }),
+                        r#type: RangeType::Primary as i32,
                     })
                     .collect();
                 let update = WardenUpdate {
@@ -452,6 +535,23 @@ impl AssignmentComputation for AssignmentComputationImpl {
                         FullAssignment {
                             version: self.current_version.lock().unwrap().clone(),
                             range: assigned_ranges,
+                            replication_mapping: self
+                                .replication_mappings
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .map(|r| proto::warden::ReplicationMapping {
+                                    primary_range: Some(proto::warden::RangeId {
+                                        keyspace_id: r.primary_range.keyspace_id.id.to_string(),
+                                        range_id: r.primary_range.range_id.to_string(),
+                                    }),
+                                    secondary_range: Some(proto::warden::RangeId {
+                                        keyspace_id: r.secondary_range.keyspace_id.id.to_string(),
+                                        range_id: r.secondary_range.range_id.to_string(),
+                                    }),
+                                    assignee: r.assignee.clone(),
+                                })
+                                .collect(),
                         },
                     )),
                 };
@@ -768,7 +868,10 @@ mod tests {
         match update {
             proto::warden::warden_update::Update::FullAssignment(full_assigment) => {
                 assert_eq!(full_assigment.range.len(), 1);
-                assert_eq!(full_assigment.range[0].range_id, range.id.to_string());
+                assert_eq!(
+                    full_assigment.range[0].range.as_ref().unwrap().range_id,
+                    range.id.to_string()
+                );
             }
             _ => panic!("Expected FullAssignment"),
         }

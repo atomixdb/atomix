@@ -11,5 +11,6 @@ pub mod network;
 pub mod range_type;
 pub mod record;
 pub mod region;
+pub mod replication_mapping;
 pub mod transaction_info;
 pub mod util;

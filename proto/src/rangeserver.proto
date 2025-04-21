@@ -24,3 +24,14 @@ message PrefetchRequest {
 message PrefetchResponse {
     string status = 1;
 }
+
+message Record {
+    bytes key = 1;
+    bytes value = 2;
+}
+
+message ReplicatedCommitRequest {
+    RangeId range = 1;
+    repeated Record puts = 2;
+    repeated bytes deletes = 3;
+}

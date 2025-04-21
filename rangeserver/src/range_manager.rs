@@ -1,10 +1,12 @@
 pub mod r#impl;
 mod lock_table;
+pub mod r#secondary;
 
 use crate::error::Error;
 use bytes::Bytes;
 use common::transaction_info::TransactionInfo;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
+use proto::rangeserver::ReplicatedCommitRequest;
 use std::sync::Arc;
 use tonic::async_trait;
 use uuid::Uuid;
@@ -20,7 +22,7 @@ pub struct PrepareResult {
 }
 
 #[async_trait]
-pub trait RangeManager {
+pub trait LoadableRange {
     /// Load and manage the range.
     async fn load(&self) -> Result<(), Error>;
     /// unload the range.
@@ -29,6 +31,10 @@ pub trait RangeManager {
     async fn unload(&self);
     /// Returns true if the range is ever been unloaded, false otherwise.
     async fn is_unloaded(&self) -> bool;
+}
+
+#[async_trait]
+pub trait RangeManager: LoadableRange {
     /// Request prefetching a key from storage and pinning to memory.
     async fn prefetch(&self, transaction_id: Uuid, key: Bytes) -> Result<(), Error>;
     /// Get the value associated with a key.
@@ -57,4 +63,18 @@ pub trait RangeManager {
         tx: Arc<TransactionInfo>,
         commit: CommitRequest<'_>,
     ) -> Result<(), Error>;
+}
+
+/// A trait for secondary range managers.
+/// TODO: We don't need all the methods of RangeManager here. Introduce a new
+/// trait that includes the common methods, which are mainly about range
+/// management. Basically, the lifecycle of both primary and secondary ranges
+/// should be similar in terms of getting / renewing leases.
+#[async_trait]
+
+pub trait SecondaryRangeManager: LoadableRange {
+    /// Get the value associated with a key.
+    async fn get(&self, tx: Arc<TransactionInfo>, key: Bytes) -> Result<GetResult, Error>;
+    /// Commits a replicated value to the range.
+    async fn commit_replicated(&self, commit: ReplicatedCommitRequest) -> Result<(), Error>;
 }

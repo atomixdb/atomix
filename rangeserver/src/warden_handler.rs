@@ -1,8 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use common::full_range_id::FullRangeId;
+use common::full_range_id::{FullRangeId, FullRangeIdAndType};
 use common::keyspace_id::KeyspaceId;
+use common::range_type::RangeType;
+use common::replication_mapping::ReplicationMapping;
 use common::{config::Config, host_info::HostInfo};
 use proto::warden::warden_client::WardenClient;
 use std::ops::Deref;
@@ -20,7 +22,8 @@ use crate::epoch_supplier::EpochSupplier;
 type WardenErr = Box<dyn std::error::Error + Sync + Send + 'static>;
 struct StartedState {
     stopper: CancellationToken,
-    assigned_ranges: RwLock<HashSet<FullRangeId>>,
+    assigned_ranges: RwLock<HashMap<FullRangeId, FullRangeIdAndType>>,
+    primary_range_id_to_replication_mappings: RwLock<HashMap<FullRangeId, Vec<ReplicationMapping>>>,
 }
 
 enum State {
@@ -30,8 +33,9 @@ enum State {
 }
 
 pub enum WardenUpdate {
-    LoadRange(FullRangeId),
-    UnloadRange(FullRangeId),
+    LoadRange(FullRangeIdAndType),
+    UnloadRange(FullRangeIdAndType),
+    NewReplicationMapping(ReplicationMapping),
 }
 
 pub struct WardenHandler {
@@ -65,60 +69,119 @@ impl WardenHandler {
         }
     }
 
+    fn full_range_id_and_type_from_proto(
+        proto_range_id_and_type: &proto::warden::RangeIdAndType,
+    ) -> FullRangeIdAndType {
+        let proto_range_id = proto_range_id_and_type.range.as_ref().unwrap();
+        let full_range_id = Self::full_range_id_from_proto(proto_range_id);
+        let range_type = match proto_range_id_and_type.r#type() {
+            proto::warden::RangeType::Primary => RangeType::Primary,
+            proto::warden::RangeType::Secondary => RangeType::Secondary,
+        };
+        FullRangeIdAndType {
+            full_range_id,
+            range_type,
+        }
+    }
+
+    fn replication_mapping_from_proto(
+        proto_replication_mapping: &proto::warden::ReplicationMapping,
+    ) -> ReplicationMapping {
+        let primary_range = proto_replication_mapping.primary_range.as_ref().unwrap();
+        let secondary_range = proto_replication_mapping.secondary_range.as_ref().unwrap();
+        ReplicationMapping {
+            primary_range: Self::full_range_id_from_proto(primary_range),
+            secondary_range: Self::full_range_id_from_proto(secondary_range),
+            assignee: proto_replication_mapping.assignee.clone(),
+        }
+    }
+
     fn process_warden_update(
         update: &proto::warden::WardenUpdate,
         updates_sender: &mpsc::UnboundedSender<WardenUpdate>,
-        assigned_ranges: &mut HashSet<FullRangeId>,
+        assigned_ranges: &mut HashMap<FullRangeId, FullRangeIdAndType>,
+        primary_id_to_replication_mappings: &mut HashMap<FullRangeId, Vec<ReplicationMapping>>,
     ) {
         let update = update.update.as_ref().unwrap();
         match update {
             proto::warden::warden_update::Update::FullAssignment(full_assignment) => {
-                let new_assignment: HashSet<FullRangeId> = full_assignment
+                let new_assignment: HashMap<FullRangeId, FullRangeIdAndType> = full_assignment
                     .range
                     .iter()
-                    .map(Self::full_range_id_from_proto)
+                    .map(|r| {
+                        let range_info = Self::full_range_id_and_type_from_proto(r);
+                        (range_info.full_range_id, range_info)
+                    })
                     .collect();
 
                 // Unload any ranges that are no longer assigned to us.
-                for current_range in assigned_ranges.iter() {
-                    if !new_assignment.contains(current_range) {
+                for (range_id, range_info) in assigned_ranges.iter() {
+                    if !new_assignment.contains_key(range_id) {
                         updates_sender
-                            .send(WardenUpdate::UnloadRange(*current_range))
+                            .send(WardenUpdate::UnloadRange(*range_info))
                             .unwrap();
                     }
                 }
 
                 // Load any ranges that got newly assigned to us.
-                for assigned_range in &new_assignment {
-                    if !assigned_ranges.contains(assigned_range) {
+                for (assigned_range_id, assigned_range_info) in &new_assignment {
+                    if !assigned_ranges.contains_key(assigned_range_id) {
                         updates_sender
-                            .send(WardenUpdate::LoadRange(*assigned_range))
+                            .send(WardenUpdate::LoadRange(*assigned_range_info))
                             .unwrap();
                     }
                 }
+
+                // TODO: Replication mappings for our assigned primary ranges.
+                // First, add the RMs to the replication mappings.
+                for proto_rm in &full_assignment.replication_mapping {
+                    let rm = Self::replication_mapping_from_proto(proto_rm);
+                    // Does this mapping already exist?
+                    let rm_exists = primary_id_to_replication_mappings
+                        .contains_key(&rm.primary_range)
+                        && primary_id_to_replication_mappings
+                            .get(&rm.primary_range)
+                            .unwrap()
+                            .iter()
+                            .any(|existing_rm| *existing_rm == rm);
+                    if rm_exists {
+                        continue;
+                    }
+                    // Otherwise, add the mapping.
+                    primary_id_to_replication_mappings
+                        .entry(rm.primary_range)
+                        .or_insert_with(Vec::new)
+                        .push(rm.clone());
+
+                    updates_sender
+                        .send(WardenUpdate::NewReplicationMapping(rm))
+                        .unwrap();
+                }
+
+                // TODO(yanniszark): Find removed replication mappings
 
                 assigned_ranges.clear();
                 assigned_ranges.clone_from(&new_assignment);
             }
             proto::warden::warden_update::Update::IncrementalAssignment(incremental) => {
                 for range_id in &incremental.load {
-                    let assigned_range = Self::full_range_id_from_proto(range_id);
-                    if !assigned_ranges.contains(&assigned_range) {
+                    let assigned_range = Self::full_range_id_and_type_from_proto(range_id);
+                    if !assigned_ranges.contains_key(&assigned_range.full_range_id) {
                         updates_sender
                             .send(WardenUpdate::LoadRange(assigned_range))
                             .unwrap();
                     }
-                    assigned_ranges.insert(assigned_range);
+                    assigned_ranges.insert(assigned_range.full_range_id, assigned_range);
                 }
 
                 for range_id in &incremental.unload {
-                    let removed_range = Self::full_range_id_from_proto(range_id);
-                    if assigned_ranges.contains(&removed_range) {
+                    let removed_range = Self::full_range_id_and_type_from_proto(range_id);
+                    if assigned_ranges.contains_key(&removed_range.full_range_id) {
                         updates_sender
                             .send(WardenUpdate::UnloadRange(removed_range))
                             .unwrap();
                     }
-                    assigned_ranges.remove(&removed_range);
+                    assigned_ranges.remove(&removed_range.full_range_id);
                 }
             }
         }
@@ -157,7 +220,12 @@ impl WardenHandler {
                         }
                         Some(update) => {
                             let mut assigned_ranges_lock = state.assigned_ranges.write().await;
-                            Self::process_warden_update(&update, &updates_sender, assigned_ranges_lock.deref_mut())
+                            let mut primary_id_to_replication_mappings_lock =
+                                state.primary_range_id_to_replication_mappings.write().await;
+                            Self::process_warden_update(
+                                &update, &updates_sender,
+                                assigned_ranges_lock.deref_mut(),
+                                primary_id_to_replication_mappings_lock.deref_mut());
                         }
                     }
                 }
@@ -213,7 +281,8 @@ impl WardenHandler {
                     let stop = CancellationToken::new();
                     let started_state = Arc::new(StartedState {
                         stopper: stop,
-                        assigned_ranges: RwLock::new(HashSet::new()),
+                        assigned_ranges: RwLock::new(HashMap::new()),
+                        primary_range_id_to_replication_mappings: RwLock::new(HashMap::new()),
                     });
                     *state = State::Started(started_state.clone());
                     drop(state);
@@ -252,7 +321,7 @@ impl WardenHandler {
             State::Stopped => false,
             State::Started(state) => {
                 let assigned_ranges = state.assigned_ranges.read().await;
-                (*assigned_ranges).contains(range_id)
+                (*assigned_ranges).contains_key(range_id)
             }
         }
     }

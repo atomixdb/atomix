@@ -1,5 +1,7 @@
 use bytes::Bytes;
+use common::full_range_id::FullRangeIdAndType;
 use common::network::fast_network::FastNetwork;
+use common::range_type::RangeType;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -20,7 +22,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::range_manager::r#impl::RangeManager;
-use crate::range_manager::RangeManager as RangeManagerTrait;
+use crate::range_manager::secondary::SecondaryRangeManager;
+use crate::range_manager::{LoadableRange, RangeManager as RangeManagerTrait};
 use crate::warden_handler::WardenHandler;
 use crate::{
     epoch_supplier::EpochSupplier, error::Error, for_testing::in_memory_wal::InMemoryWal,
@@ -78,7 +81,7 @@ where
 
         let range_manager = self
             .parent_server
-            .maybe_load_and_get_range(&full_range_id)
+            .maybe_load_and_get_primary_range(&full_range_id)
             .await
             .map_err(|e| TStatus::internal(format!("Failed to load range: {:?}", e)))?;
 
@@ -105,6 +108,7 @@ where
     bg_runtime: tokio::runtime::Handle,
     // TODO: parameterize the WAL implementation too.
     loaded_ranges: RwLock<HashMap<Uuid, Arc<RangeManager<S, InMemoryWal>>>>,
+    secondary_loaded_ranges: RwLock<HashMap<Uuid, Arc<SecondaryRangeManager<S, InMemoryWal>>>>,
     transaction_table: RwLock<HashMap<Uuid, Arc<TransactionInfo>>>,
     prefetching_buffer: Arc<PrefetchingBuffer>,
 }
@@ -130,6 +134,7 @@ where
             warden_handler,
             bg_runtime,
             loaded_ranges: RwLock::new(HashMap::new()),
+            secondary_loaded_ranges: RwLock::new(HashMap::new()),
             transaction_table: RwLock::new(HashMap::new()),
             prefetching_buffer: Arc::new(PrefetchingBuffer::new()),
         })
@@ -166,9 +171,22 @@ where
         (*tx_table).remove(&id);
     }
 
-    async fn maybe_unload_range(&self, id: &FullRangeId) {
+    async fn maybe_unload_primary_range(&self, id: &FullRangeId) {
+        self.maybe_unload_range(&id, &self.loaded_ranges).await
+    }
+
+    async fn maybe_unload_secondary_range(&self, id: &FullRangeId) {
+        self.maybe_unload_range(&id, &self.secondary_loaded_ranges)
+            .await
+    }
+
+    async fn maybe_unload_range<R: LoadableRange>(
+        &self,
+        id: &FullRangeId,
+        table: &RwLock<HashMap<Uuid, Arc<R>>>,
+    ) {
         let rm = {
-            let mut range_table = self.loaded_ranges.write().await;
+            let mut range_table = table.write().await;
             (*range_table).remove(&id.range_id)
         };
         match rm {
@@ -177,13 +195,15 @@ where
         }
     }
 
-    async fn maybe_load_and_get_range_inner(
+    async fn maybe_load_and_get_range_inner<R: LoadableRange>(
         &self,
         id: &FullRangeId,
-    ) -> Result<Arc<RangeManager<S, InMemoryWal>>, Error> {
+        table: &RwLock<HashMap<Uuid, Arc<R>>>,
+        create_new: impl FnOnce(&Server<S>, &FullRangeId) -> Arc<R>,
+    ) -> Result<Arc<R>, Error> {
         {
             // Fast path when range has already been loaded.
-            let range_table = self.loaded_ranges.read().await;
+            let range_table = table.read().await;
             if let Some(r) = (*range_table).get(&id.range_id) {
                 r.load().await?;
                 return Ok(r.clone());
@@ -195,22 +215,14 @@ where
         }
 
         let rm = {
-            let mut range_table = self.loaded_ranges.write().await;
+            let mut range_table = table.write().await;
             match (range_table).get(&id.range_id) {
                 Some(r) => {
                     r.load().await?;
                     r.clone()
                 }
                 None => {
-                    let rm = RangeManager::new(
-                        *id,
-                        self.config.clone(),
-                        self.storage.clone(),
-                        self.epoch_supplier.clone(),
-                        InMemoryWal::new(),
-                        self.prefetching_buffer.clone(),
-                        self.bg_runtime.clone(),
-                    );
+                    let rm = create_new(self, id);
                     (range_table).insert(id.range_id, rm.clone());
                     drop(range_table);
                     rm.load().await?;
@@ -221,18 +233,22 @@ where
         Ok(rm.clone())
     }
 
-    async fn maybe_load_and_get_range(
+    async fn maybe_load_and_get_range<R: LoadableRange>(
         &self,
         id: &FullRangeId,
-    ) -> Result<Arc<RangeManager<S, InMemoryWal>>, Error> {
-        let res = self.maybe_load_and_get_range_inner(id).await;
+        table: &RwLock<HashMap<Uuid, Arc<R>>>,
+        create_new: impl FnOnce(&Server<S>, &FullRangeId) -> Arc<R>,
+    ) -> Result<Arc<R>, Error> {
+        let res = self
+            .maybe_load_and_get_range_inner(id, table, create_new)
+            .await;
         match res {
             Ok(_) => (),
             Err(_) => {
                 // An RM load can only be attempted once, so remove from table
                 // to force creating a fresh one if the range is still assigned
                 // to us.
-                let mut range_table = self.loaded_ranges.write().await;
+                let mut range_table = table.write().await;
                 let remove = match range_table.get(&id.range_id) {
                     None => false,
                     Some(r) => !r.is_unloaded().await,
@@ -243,6 +259,41 @@ where
             }
         };
         res
+    }
+
+    async fn maybe_load_and_get_primary_range(
+        &self,
+        id: &FullRangeId,
+    ) -> Result<Arc<RangeManager<S, InMemoryWal>>, Error> {
+        self.maybe_load_and_get_range(id, &self.loaded_ranges, |server, id| {
+            RangeManager::new(
+                *id,
+                server.config.clone(),
+                server.storage.clone(),
+                server.epoch_supplier.clone(),
+                InMemoryWal::new(),
+                server.prefetching_buffer.clone(),
+                server.bg_runtime.clone(),
+            )
+        })
+        .await
+    }
+
+    async fn maybe_load_and_get_secondary_range(
+        &self,
+        id: &FullRangeId,
+    ) -> Result<Arc<SecondaryRangeManager<S, InMemoryWal>>, Error> {
+        self.maybe_load_and_get_range(id, &self.secondary_loaded_ranges, |server, id| {
+            SecondaryRangeManager::new(
+                *id,
+                server.config.clone(),
+                server.storage.clone(),
+                server.epoch_supplier.clone(),
+                InMemoryWal::new(),
+                server.bg_runtime.clone(),
+            )
+        })
+        .await
     }
 
     fn send_response(
@@ -288,7 +339,7 @@ where
         }
         self.maybe_start_transaction(transaction_id, request.transaction_info())
             .await;
-        let rm = self.maybe_load_and_get_range(&range_id).await?;
+        let rm = self.maybe_load_and_get_primary_range(&range_id).await?;
         let tx = self.get_transaction_info(transaction_id).await?;
         let mut leader_sequence_number: i64 = constants::UNSET_LEADER_SEQUENCE_NUMBER;
         let mut reads = Vec::new();
@@ -401,7 +452,7 @@ where
             None => return Err(Error::InvalidRequestFormat),
             Some(id) => util::flatbuf::deserialize_uuid(id),
         };
-        let rm = self.maybe_load_and_get_range(&range_id).await?;
+        let rm = self.maybe_load_and_get_primary_range(&range_id).await?;
         let tx = self.get_transaction_info(transaction_id).await?;
         rm.prepare(tx.clone(), request).await
     }
@@ -476,7 +527,7 @@ where
             None => return Err(Error::InvalidRequestFormat),
             Some(id) => util::flatbuf::deserialize_uuid(id),
         };
-        let rm = self.maybe_load_and_get_range(&range_id).await?;
+        let rm = self.maybe_load_and_get_primary_range(&range_id).await?;
         let tx = self.get_transaction_info(transaction_id).await?;
         rm.commit(tx.clone(), request).await?;
         self.remove_transaction(transaction_id).await;
@@ -530,7 +581,7 @@ where
             None => return Err(Error::InvalidRequestFormat),
             Some(id) => util::flatbuf::deserialize_uuid(id),
         };
-        let rm = self.maybe_load_and_get_range(&range_id).await?;
+        let rm = self.maybe_load_and_get_primary_range(&range_id).await?;
         let tx = self.get_transaction_info(transaction_id).await?;
         rm.abort(tx.clone(), request).await?;
         self.remove_transaction(transaction_id).await;
@@ -589,17 +640,34 @@ where
                         }
                         Some(update) => {
                             match &update {
-                                crate::warden_handler::WardenUpdate::LoadRange(id) => {
-                                    let id = *id;
+                                crate::warden_handler::WardenUpdate::LoadRange(range_info) => {
+                                    let range_info = *range_info;
                                     let server = server.clone();
-                                    tokio::spawn (async move
-                                        {
-                                            // TODO: handle errors here
-                                            server.maybe_load_and_get_range(&id).await
-                                        });
+                                    tokio::spawn(async move {
+                                        // TODO: handle errors here
+                                        match range_info.range_type {
+                                            RangeType::Primary => {
+                                                let _ = server.maybe_load_and_get_primary_range(&range_info.full_range_id).await;
+                                            }
+                                            RangeType::Secondary => {
+                                                let _ = server.maybe_load_and_get_secondary_range(&range_info.full_range_id).await;
+                                            }
+                                        }
+                                    });
                                 }
-                                crate::warden_handler::WardenUpdate::UnloadRange(id) => {
-                                    server.maybe_unload_range(id).await
+                                crate::warden_handler::WardenUpdate::UnloadRange(range_info) => {
+                                    match range_info.range_type {
+                                        RangeType::Primary => {
+                                            server.maybe_unload_primary_range(&range_info.full_range_id).await
+                                        }
+                                        RangeType::Secondary => {
+                                            server.maybe_unload_secondary_range(&range_info.full_range_id).await
+                                        }
+                                    }
+                                }
+                                crate::warden_handler::WardenUpdate::NewReplicationMapping(rm) => {
+                                    todo!("implement load replication mapping")
+                                    // Configure the primary range to send
                                 }
                             }
                         }

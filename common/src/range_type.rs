@@ -5,7 +5,7 @@ use scylla::serialize::value::SerializeCql;
 use scylla::serialize::writers::WrittenCellProof;
 use scylla::serialize::{CellWriter, SerializationError};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Hash)]
 pub enum RangeType {
     Primary,
     Secondary,
