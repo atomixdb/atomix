@@ -13,6 +13,7 @@ message RangeKey {
 
 service RangeServer {
     rpc Prefetch (PrefetchRequest) returns (PrefetchResponse);
+    rpc Replicate (stream ReplicateRequest) returns (stream ReplicateResponse);
 }
 
 message PrefetchRequest {
@@ -30,8 +31,36 @@ message Record {
     bytes value = 2;
 }
 
-message ReplicatedCommitRequest {
+message ReplicateInitRequest {
+    RangeId range = 2;
+}
+
+message ReplicateInitResponse {
+    bool success = 1;
+}
+
+message ReplicateDataRequest {
+    bytes transaction_id = 1;
+    RangeId range = 2;
+    repeated Record puts = 3;
+    repeated bytes deletes = 4;
+}
+
+message ReplicateDataResponse {
     RangeId range = 1;
-    repeated Record puts = 2;
-    repeated bytes deletes = 3;
+    bytes latest_persisted_transaction_id = 2;
+}
+
+message ReplicateRequest {
+    oneof request {
+        ReplicateInitRequest init = 1;
+        ReplicateDataRequest data = 2;
+    }
+}
+
+message ReplicateResponse {
+    oneof response {
+        ReplicateInitResponse init = 1;
+        ReplicateDataResponse data = 2;
+    }
 }

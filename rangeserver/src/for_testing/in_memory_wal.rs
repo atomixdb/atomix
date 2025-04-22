@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
 use flatbuffers::FlatBufferBuilder;
 use prost::Message;
-use proto::rangeserver::ReplicatedCommitRequest;
+use proto::rangeserver::ReplicateDataRequest;
 use tokio::sync::Mutex;
 
 pub struct InMemoryWal {
@@ -139,7 +139,7 @@ impl Wal for InMemoryWal {
         state.append_data_currently_in_builder()
     }
 
-    async fn append_replicated_commit(&self, entry: ReplicatedCommitRequest) -> Result<(), Error> {
+    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<(), Error> {
         let mut state = self.state.lock().await;
         let bytes = entry.encode_to_vec();
         let commit_bytes = state.flatbuf_builder.create_vector(&bytes);

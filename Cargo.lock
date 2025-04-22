@@ -1435,6 +1435,7 @@ dependencies = [
  "flatbuf",
  "flatbuffers",
  "machnet",
+ "pin-project",
  "prost",
  "proto",
  "rand",

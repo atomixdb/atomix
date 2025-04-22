@@ -6,9 +6,13 @@ use crate::error::Error;
 use bytes::Bytes;
 use common::transaction_info::TransactionInfo;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
-use proto::rangeserver::ReplicatedCommitRequest;
-use std::sync::Arc;
-use tonic::async_trait;
+use proto::rangeserver::ReplicateDataRequest;
+use proto::rangeserver::{ReplicateRequest, ReplicateResponse};
+use secondary::ReplicationError;
+use std::{pin::Pin, sync::Arc};
+use tokio_stream::{wrappers::ReceiverStream, Stream};
+use tonic::Status as TStatus;
+use tonic::{async_trait, Streaming};
 use uuid::Uuid;
 
 pub struct GetResult {
@@ -76,5 +80,11 @@ pub trait SecondaryRangeManager: LoadableRange {
     /// Get the value associated with a key.
     async fn get(&self, tx: Arc<TransactionInfo>, key: Bytes) -> Result<GetResult, Error>;
     /// Commits a replicated value to the range.
-    async fn commit_replicated(&self, commit: ReplicatedCommitRequest) -> Result<(), Error>;
+    async fn commit_replicated(&self, commit: ReplicateDataRequest) -> Result<(), Error>;
+    /// Sets the replication stream for this range.
+    async fn start_replication(
+        &self,
+        recv_stream: Streaming<ReplicateRequest>,
+        send_stream: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
+    ) -> Result<(), ReplicationError>;
 }

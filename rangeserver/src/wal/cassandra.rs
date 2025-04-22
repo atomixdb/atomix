@@ -253,7 +253,7 @@ impl Wal for CassandraWal {
         self.append_entry(Entry::Commit, entry._tab.buf()).await
     }
 
-    async fn append_replicated_commit(&self, entry: ReplicatedCommitRequest) -> Result<(), Error> {
+    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<(), Error> {
         self.append_entry(Entry::ReplicatedCommit, entry.encode_to_vec().as_slice())
             .await
     }

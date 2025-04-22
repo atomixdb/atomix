@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
-use proto::rangeserver::ReplicatedCommitRequest;
+use proto::rangeserver::ReplicateDataRequest;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -37,7 +37,7 @@ pub trait Wal: Send + Sync + 'static {
     async fn append_prepare(&self, entry: PrepareRequest<'_>) -> Result<(), Error>;
     async fn append_commit(&self, entry: CommitRequest<'_>) -> Result<(), Error>;
     async fn append_abort(&self, entry: AbortRequest<'_>) -> Result<(), Error>;
-    async fn append_replicated_commit(&self, entry: ReplicatedCommitRequest) -> Result<(), Error>;
+    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<(), Error>;
     async fn trim_before_offset(&self, offset: u64) -> Result<(), Error>;
 
     fn iterator(&self) -> impl Iterator + Send;

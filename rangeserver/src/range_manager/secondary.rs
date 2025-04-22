@@ -9,14 +9,25 @@ use common::config::Config;
 use common::full_range_id::FullRangeId;
 use common::transaction_info::TransactionInfo;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
-use proto::rangeserver::ReplicatedCommitRequest;
+use proto::rangeserver::replicate_request;
+use proto::rangeserver::ReplicateDataRequest;
+use proto::rangeserver::ReplicateRequest;
+use proto::rangeserver::ReplicateResponse;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::ops::DerefMut;
+use std::pin::Pin;
 use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::Stream;
 use tonic::async_trait;
+use tonic::Status as TStatus;
+use tonic::Streaming;
+use tracing::error;
 use uuid::Uuid;
 
 use super::GetResult;
@@ -39,6 +50,71 @@ enum State {
     Unloaded,
 }
 
+pub struct ReplicationServer<S, W>
+where
+    S: Storage,
+    W: Wal,
+{
+    receiver: Streaming<ReplicateRequest>,
+    sender: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
+    wal: Arc<W>,
+    storage: Arc<S>,
+}
+
+impl<S, W> ReplicationServer<S, W>
+where
+    S: Storage,
+    W: Wal,
+{
+    pub fn new(
+        receiver: Streaming<ReplicateRequest>,
+        sender: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
+        storage: Arc<S>,
+        wal: Arc<W>,
+    ) -> Self {
+        Self {
+            receiver,
+            sender,
+            storage,
+            wal,
+        }
+    }
+
+    async fn serve(&mut self) -> Result<(), ReplicationError> {
+        let result = self.serve_inner().await;
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                error!("Replication server failed: {:?}", e);
+                Err(e)
+            }
+        }
+    }
+
+    async fn serve_inner(&mut self) -> Result<(), ReplicationError> {
+        // TODO: Maybe add a stop channel to stop the server gracefully.
+        loop {
+            // Get the next message from the stream.
+            let message = match self.receiver.message().await {
+                Ok(Some(msg)) => msg,
+                Ok(None) => return Err(ReplicationError::StreamDropped),
+                Err(e) => return Err(ReplicationError::InternalError(Arc::new(e))),
+            };
+            // Process the message.
+            match message.request.unwrap() {
+                replicate_request::Request::Init(_) => {
+                    return Err(ReplicationError::InitReceivedOnExistingStream);
+                }
+                replicate_request::Request::Data(data) => {
+                    // Persist to WAL
+                    self.wal.append_replicated_commit(data).await.unwrap();
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct SecondaryRangeManager<S, W>
 where
     S: Storage,
@@ -51,6 +127,19 @@ where
     wal: Arc<W>,
     state: Arc<RwLock<State>>,
     bg_runtime: tokio::runtime::Handle,
+    replication_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+#[derive(Clone, Debug, Error)]
+pub enum ReplicationError {
+    #[error("Replication stream dropped")]
+    StreamDropped,
+    #[error("Replication stream already exists")]
+    StreamAlreadyExists,
+    #[error("Replication stream received init on existing stream")]
+    InitReceivedOnExistingStream,
+    #[error("Replication stream internal error: {0}")]
+    InternalError(Arc<dyn std::error::Error + Send + Sync>),
 }
 
 #[async_trait]
@@ -122,8 +211,44 @@ where
     }
     /// Append to the secondary commit log.
     /// Will be applied later in a coordinated manner.
-    async fn commit_replicated(&self, commit: ReplicatedCommitRequest) -> Result<(), Error> {
+    async fn commit_replicated(&self, commit: ReplicateDataRequest) -> Result<(), Error> {
         self.wal.append_replicated_commit(commit).await.unwrap();
+        Ok(())
+    }
+
+    /// Sets the replication stream for this range.
+    async fn start_replication(
+        &self,
+        recv_stream: Streaming<ReplicateRequest>,
+        send_stream: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
+    ) -> Result<(), ReplicationError> {
+        // Is there a replication task already?
+        // If there is one but it's finished, we can start a new one.
+        let mut replication_task = self.replication_task.lock().await;
+        match replication_task.deref() {
+            Some(handle) => {
+                if handle.is_finished() {
+                    // Extract the result
+                    // TODO: Handle this more systematically.
+                    // The task is finished, we can start a new one.
+                    *replication_task = None;
+                } else {
+                    // The task is still running, we cannot start a new one.
+                    return Err(ReplicationError::StreamAlreadyExists);
+                }
+            }
+            None => {}
+        }
+        // Start the replication task.
+        // Create a new task to handle replication
+        let storage_clone = self.storage.clone();
+        let wal_clone = self.wal.clone();
+        *replication_task = Some(tokio::spawn(async move {
+            let mut replication_server =
+                ReplicationServer::new(recv_stream, send_stream, storage_clone, wal_clone);
+            replication_server.serve();
+        }));
+
         Ok(())
     }
 }
@@ -149,6 +274,7 @@ where
             wal: Arc::new(wal),
             state: Arc::new(RwLock::new(State::NotLoaded)),
             bg_runtime,
+            replication_task: Mutex::new(None),
         })
     }
 

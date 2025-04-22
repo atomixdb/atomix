@@ -1,11 +1,15 @@
 use bytes::Bytes;
-use common::full_range_id::FullRangeIdAndType;
 use common::network::fast_network::FastNetwork;
 use common::range_type::RangeType;
+use pin_project::{pin_project, pinned_drop};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio_stream::wrappers::{ReceiverStream, WatchStream};
+use tokio_stream::Stream;
 use tonic::{transport::Server as TServer, Request, Response, Status as TStatus};
 
 use common::keyspace_id::KeyspaceId;
@@ -23,7 +27,10 @@ use uuid::Uuid;
 
 use crate::range_manager::r#impl::RangeManager;
 use crate::range_manager::secondary::SecondaryRangeManager;
-use crate::range_manager::{LoadableRange, RangeManager as RangeManagerTrait};
+use crate::range_manager::{
+    LoadableRange, RangeManager as RangeManagerTrait,
+    SecondaryRangeManager as SecondaryRangeManagerTrait,
+};
 use crate::warden_handler::WardenHandler;
 use crate::{
     epoch_supplier::EpochSupplier, error::Error, for_testing::in_memory_wal::InMemoryWal,
@@ -33,7 +40,10 @@ use flatbuf::rangeserver_flatbuffers::range_server::TransactionInfo as FlatbufTr
 use flatbuf::rangeserver_flatbuffers::range_server::*;
 
 use proto::rangeserver::range_server_server::{RangeServer, RangeServerServer};
-use proto::rangeserver::{PrefetchRequest, PrefetchResponse};
+use proto::rangeserver::{
+    replicate_request, replicate_response, PrefetchRequest, PrefetchResponse,
+    ReplicateInitResponse, ReplicateRequest, ReplicateResponse,
+};
 
 use crate::prefetching_buffer::PrefetchingBuffer;
 
@@ -94,6 +104,73 @@ where
             }
             Err(_) => Err(TStatus::internal("Failed to process prefetch request")),
         }
+    }
+
+    type ReplicateStream =
+        Pin<Box<dyn Stream<Item = Result<ReplicateResponse, TStatus>> + Send + 'static>>;
+    async fn replicate(
+        &self,
+        request: Request<tonic::Streaming<ReplicateRequest>>,
+    ) -> Result<Response<Self::ReplicateStream>, TStatus> {
+        let mut stream = request.into_inner();
+        let first_message = stream.message().await.map_err(|e| {
+            TStatus::internal(format!("Failed to get first message from stream: {:?}", e))
+        })?;
+
+        let first_message = match first_message {
+            Some(msg) => msg,
+            None => return Err(TStatus::invalid_argument("Empty stream received")),
+        };
+
+        // Check that first message is a ReplicateInitRequest
+        let init_request = match first_message.request {
+            Some(replicate_request::Request::Init(init)) => init,
+            Some(replicate_request::Request::Data(_)) => {
+                return Err(TStatus::invalid_argument(
+                    "First message must be a ReplicateInitRequest",
+                ))
+            }
+            None => return Err(TStatus::invalid_argument("Empty request received")),
+        };
+
+        // Extract the range_id that this replication stream is for
+        let range_id = match init_request.range {
+            Some(ref id) => id,
+            None => return Err(TStatus::invalid_argument("Empty range_id received")),
+        };
+
+        let range_id = FullRangeId {
+            keyspace_id: KeyspaceId::from_str(&range_id.keyspace_id).unwrap(),
+            range_id: Uuid::parse_str(&range_id.range_id).unwrap(),
+        };
+
+        // Get the appropriate secondary range manager
+        let rm = self
+            .parent_server
+            .maybe_load_and_get_secondary_range(&range_id)
+            .await
+            .map_err(|e| TStatus::internal(format!("Failed to load range: {:?}", e)))?;
+
+        // TODO: Make channel size configurable
+        let (send_tx, send_rx) = tokio::sync::mpsc::channel(100);
+
+        // Send back the ack
+        let ack = ReplicateResponse {
+            response: Some(replicate_response::Response::Init(ReplicateInitResponse {
+                success: true,
+            })),
+        };
+        send_tx
+            .send(Ok(ack))
+            .await
+            .map_err(|e| TStatus::internal(format!("Failed to send ack: {:?}", e)))?;
+
+        // Start the replication stream
+        let send_stream = Box::pin(ReceiverStream::new(send_rx));
+        rm.start_replication(stream, send_tx)
+            .await
+            .map_err(|e| TStatus::internal(format!("Failed to set replication stream: {:?}", e)))?;
+        Ok(Response::new(send_stream))
     }
 }
 
@@ -769,14 +846,15 @@ where
             println!("Warden update loop exited!")
         });
 
-        let prefetch = ProtoServer {
+        // Proto server currently holds the prefetch and replication endpoints
+        let proto_server = ProtoServer {
             parent_server: server.clone(),
         };
 
         // Spawn the gRPC server as a separate task
         server.bg_runtime.spawn(async move {
             if let Err(e) = TServer::builder()
-                .add_service(RangeServerServer::new(prefetch))
+                .add_service(RangeServerServer::new(proto_server))
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(
                     proto_server_listener,
                 ))
