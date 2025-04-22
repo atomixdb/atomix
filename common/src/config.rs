@@ -83,7 +83,7 @@ impl<'de> Deserialize<'de> for HostPort {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EpochConfig {
     pub proto_server_addr: HostPort,
-    pub epoch_duration : std::time::Duration,
+    pub epoch_duration: std::time::Duration,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
