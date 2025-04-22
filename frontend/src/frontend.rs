@@ -144,16 +144,20 @@ impl Frontend for ProtoServer {
         let key = bytes::Bytes::copy_from_slice(&req.key);
 
         // Get the transaction
-        let tx_table = self.parent_server.transaction_table.read().await;
-        let transaction = tx_table
-            .get(&transaction_id)
-            .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+        let transaction = {
+            let tx_table = self.parent_server.transaction_table.read().await;
+            tx_table
+                .get(&transaction_id)
+                .ok_or_else(|| TStatus::not_found("Transaction not found"))?
+                .clone()
+        };
 
-        let mut tx = transaction.lock().await;
-        let result = tx
-            .get(&keyspace, key)
-            .await
-            .map_err(|e| TStatus::internal(format!("Get operation failed: {:?}", e)))?;
+        let result = {
+            let mut tx = transaction.lock().await;
+            tx.get(&keyspace, key)
+                .await
+                .map_err(|e| TStatus::internal(format!("Get operation failed: {:?}", e)))?
+        };
 
         Ok(Response::new(GetResponse {
             status: "Get request processed successfully".to_string(),
@@ -188,15 +192,20 @@ impl Frontend for ProtoServer {
         let value = bytes::Bytes::copy_from_slice(&req.value);
 
         // Get the transaction
-        let tx_table = self.parent_server.transaction_table.read().await;
-        let transaction = tx_table
-            .get(&transaction_id)
-            .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+        let transaction = {
+            let tx_table = self.parent_server.transaction_table.read().await;
+            tx_table
+                .get(&transaction_id)
+                .ok_or_else(|| TStatus::not_found("Transaction not found"))?
+                .clone()
+        };
 
-        let mut tx = transaction.lock().await;
-        tx.put(&keyspace, key, value)
-            .await
-            .map_err(|e| TStatus::internal(format!("Put operation failed: {:?}", e)))?;
+        let result = {
+            let mut tx = transaction.lock().await;
+            tx.put(&keyspace, key, value)
+                .await
+                .map_err(|e| TStatus::internal(format!("Put operation failed: {:?}", e)))?;
+        };
 
         Ok(Response::new(PutResponse {
             status: "Put request processed successfully".to_string(),
@@ -234,15 +243,20 @@ impl Frontend for ProtoServer {
         let key = bytes::Bytes::copy_from_slice(&req.key);
 
         // Get the transaction
-        let tx_table = self.parent_server.transaction_table.read().await;
-        let transaction = tx_table
-            .get(&transaction_id)
-            .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+        let transaction = {
+            let tx_table = self.parent_server.transaction_table.read().await;
+            tx_table
+                .get(&transaction_id)
+                .ok_or_else(|| TStatus::not_found("Transaction not found"))?
+                .clone()
+        };
 
-        let mut tx = transaction.lock().await;
-        tx.del(&keyspace, key)
-            .await
-            .map_err(|e| TStatus::internal(format!("Delete operation failed: {:?}", e)))?;
+        {
+            let mut tx = transaction.lock().await;
+            tx.del(&keyspace, key)
+                .await
+                .map_err(|e| TStatus::internal(format!("Delete operation failed: {:?}", e)))?;
+        }
 
         Ok(Response::new(DeleteResponse {
             status: "Delete request processed successfully".to_string(),
@@ -270,17 +284,21 @@ impl Frontend for ProtoServer {
         })?;
 
         // Get the transaction
-        {
+        let transaction = {
             let tx_table = self.parent_server.transaction_table.read().await;
-            let transaction = tx_table
+            tx_table
                 .get(&transaction_id)
-                .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+                .ok_or_else(|| TStatus::not_found("Transaction not found"))?
+                .clone()
+        };
 
+        {
             let mut tx = transaction.lock().await;
             tx.abort()
                 .await
                 .map_err(|e| TStatus::internal(format!("Abort operation failed: {:?}", e)))?;
-        }
+        };
+
         // Remove the transaction from the transaction table
         self.parent_server
             .transaction_table
@@ -313,17 +331,21 @@ impl Frontend for ProtoServer {
         })?;
 
         // Get the transaction
-        {
+        let transaction = {
             let tx_table = self.parent_server.transaction_table.read().await;
-            let transaction = tx_table
+            tx_table
                 .get(&transaction_id)
-                .ok_or_else(|| TStatus::not_found("Transaction not found"))?;
+                .ok_or_else(|| TStatus::not_found("Transaction not found"))?
+                .clone()
+        };
 
+        {
             let mut tx = transaction.lock().await;
             tx.commit()
                 .await
                 .map_err(|e| TStatus::internal(format!("Commit operation failed: {:?}", e)))?;
         }
+
         // Remove the transaction from the transaction table
         self.parent_server
             .transaction_table
