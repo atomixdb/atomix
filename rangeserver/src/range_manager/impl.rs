@@ -59,12 +59,11 @@ where
     W: Wal,
 {
     async fn load(&self) -> Result<(), Error> {
-
         //  Fast path not acquiring write lock for when range is already loaded
         if let State::Loaded(_) = self.state.read().await.deref() {
             return Ok(());
         }
-        
+
         let sender = {
             let mut state = self.state.write().await;
             match state.deref_mut() {
@@ -151,14 +150,21 @@ where
         match s.deref() {
             State::NotLoaded | State::Unloaded | State::Loading(_) => Err(Error::RangeIsNotLoaded),
             State::Loaded(state) => {
-                if !state.range_info.read().await.key_range.includes(key.clone()) {
+                if !state
+                    .range_info
+                    .read()
+                    .await
+                    .key_range
+                    .includes(key.clone())
+                {
                     return Err(Error::KeyIsOutOfRange);
                 };
                 self.acquire_range_lock(state, tx.clone()).await?;
 
                 let mut get_result = GetResult {
                     val: None,
-                    leader_sequence_number: state.range_info.read().await.leader_sequence_number as i64,
+                    leader_sequence_number: state.range_info.read().await.leader_sequence_number
+                        as i64,
                 };
 
                 // check prefetch buffer
