@@ -19,7 +19,11 @@
         }
     },
     "epoch": {
-        "proto_server_addr": "127.0.0.1:50050"
+        "proto_server_addr": "127.0.0.1:50050",
+        "epoch_duration": {
+            "secs":0,
+            "nanos": 10000000
+        }
     },
     "cassandra": {
         "cql_addr": "127.0.0.1:9042"

@@ -16,6 +16,7 @@ pub struct RangeInfo {
     pub key_range: KeyRange,
     pub leader_sequence_number: u64,
     pub epoch_lease: EpochLease,
+    pub highest_known_epoch: u64,
 }
 
 #[derive(Clone, Debug, Error)]
