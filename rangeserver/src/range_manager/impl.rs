@@ -537,7 +537,8 @@ where
                 range_info.epoch_lease = new_lease;
                 {
                     let mut highest_known_epoch_old = state.highest_known_epoch.write().await;
-                    *highest_known_epoch_old = std::cmp::max(*highest_known_epoch_old, highest_known_epoch);
+                    *highest_known_epoch_old =
+                        std::cmp::max(*highest_known_epoch_old, highest_known_epoch);
                 }
             } else {
                 return Err(Error::RangeIsNotLoaded);
@@ -553,7 +554,7 @@ where
         tx: Arc<TransactionInfo>,
     ) -> Result<(), Error> {
         let receiver = {
-        let mut lock_table = state.lock_table.write().await;
+            let mut lock_table = state.lock_table.write().await;
             lock_table.acquire(tx.clone())?
         };
         // TODO: allow timing out locks when transaction timeouts are implemented.

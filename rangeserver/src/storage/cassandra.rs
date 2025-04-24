@@ -166,7 +166,7 @@ impl Storage for Cassandra {
                     cql_lease.epoch_lease.lower_bound_inclusive as u64,
                     cql_lease.epoch_lease.upper_bound_inclusive as u64,
                 ),
-                key_range: cql_lease.key_range()
+                key_range: cql_lease.key_range(),
             })
         }
     }
