@@ -807,13 +807,13 @@ mod tests {
         let rm = context.rm.clone();
         // Get the current lease bounds.
         let initial_lease = match rm.state.read().await.deref() {
-            State::Loaded(state) => state.range_info.epoch_lease,
+            State::Loaded(state) => state.range_info.read().await.epoch_lease,
             _ => panic!("Range is not loaded"),
         };
         // Sleep for 2 seconds to allow the lease renewal task to run at least once.
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         let final_lease = match rm.state.read().await.deref() {
-            State::Loaded(state) => state.range_info.epoch_lease,
+            State::Loaded(state) => state.range_info.read().await.epoch_lease,
             _ => panic!("Range is not loaded"),
         };
         // Check that the upper bound has increased.
