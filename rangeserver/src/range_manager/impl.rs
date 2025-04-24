@@ -25,7 +25,7 @@ use tonic::async_trait;
 
 struct LoadedState {
     range_info: RangeInfo,
-    highest_known_epoch: u64,
+    highest_known_epoch: HighestKnownEpoch,
     lock_table: lock_table::LockTable,
     // TODO: need more efficient representation of prepares than raw bytes.
     pending_prepare_records: Mutex<HashMap<Uuid, Bytes>>,
@@ -36,6 +36,27 @@ enum State {
     Loading(tokio::sync::broadcast::Sender<Result<(), Error>>),
     Loaded(LoadedState),
     Unloaded,
+}
+
+struct HighestKnownEpoch {
+    val: RwLock<u64>,
+}
+
+impl HighestKnownEpoch {
+    fn new(e: u64) -> HighestKnownEpoch {
+        HighestKnownEpoch {
+            val: RwLock::new(e),
+        }
+    }
+
+    async fn read(&self) -> u64 {
+        *self.val.read().await
+    }
+
+    async fn maybe_update(&self, new_epoch: u64) {
+        let mut v = self.val.write().await;
+        *v = std::cmp::max(*v, new_epoch)
+    }
 }
 
 pub struct RangeManager<S, W>
@@ -222,7 +243,6 @@ where
                 }
 
                 self.acquire_range_lock(state, tx.clone()).await?;
-
                 {
                     // TODO: probably don't need holding that latch while writing to the WAL.
                     // but needs careful thinking.
@@ -236,8 +256,10 @@ where
                         .insert(tx.id, Bytes::copy_from_slice(prepare._tab.buf()));
                 }
 
+                let highest_known_epoch = state.highest_known_epoch.read().await;
+
                 Ok(PrepareResult {
-                    highest_known_epoch: state.highest_known_epoch,
+                    highest_known_epoch,
                     epoch_lease: state.range_info.epoch_lease,
                 })
             }
@@ -279,10 +301,8 @@ where
         tx: Arc<TransactionInfo>,
         commit: CommitRequest<'_>,
     ) -> Result<(), Error> {
-        // Acquiring the state latch in write mode is fine for now since the committing transaction should
-        // be holding the (only) range lock, but once we break up the lock we should revisit this.
-        let mut s = self.state.write().await;
-        match s.deref_mut() {
+        let s = self.state.read().await;
+        match s.deref() {
             State::NotLoaded | State::Unloaded | State::Loading(_) => {
                 return Err(Error::RangeIsNotLoaded)
             }
@@ -292,8 +312,8 @@ where
                     // realize that, so we just return success.
                     return Ok(());
                 }
-                state.highest_known_epoch =
-                    std::cmp::max(state.highest_known_epoch, commit.epoch());
+                state.highest_known_epoch.maybe_update(commit.epoch()).await;
+
                 // TODO: handle potential duplicates here.
                 self.wal
                     .append_commit(commit)
@@ -445,7 +465,7 @@ where
                 // TODO: apply WAL here!
                 Ok(LoadedState {
                     range_info,
-                    highest_known_epoch,
+                    highest_known_epoch: HighestKnownEpoch::new(highest_known_epoch),
                     lock_table: lock_table::LockTable::new(),
                     pending_prepare_records: Mutex::new(HashMap::new()),
                 })
@@ -506,8 +526,10 @@ where
                     "Epoch lease changed by someone else, but only this task should be changing it!"
                 );
                 state.range_info.epoch_lease = new_lease;
-                state.highest_known_epoch =
-                    std::cmp::max(state.highest_known_epoch, highest_known_epoch);
+                state
+                    .highest_known_epoch
+                    .maybe_update(highest_known_epoch)
+                    .await;
             } else {
                 return Err(Error::RangeIsNotLoaded);
             }
