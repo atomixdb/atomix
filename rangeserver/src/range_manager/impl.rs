@@ -26,7 +26,7 @@ use tonic::async_trait;
 struct LoadedState {
     range_info: RangeInfo,
     highest_known_epoch: u64,
-    lock_table: Mutex<lock_table::LockTable>,
+    lock_table: lock_table::LockTable,
     // TODO: need more efficient representation of prepares than raw bytes.
     pending_prepare_records: Mutex<HashMap<Uuid, Bytes>>,
 }
@@ -211,14 +211,13 @@ where
                 }
                 // Validate the transaction lock is not lost, this is essential to ensure 2PL
                 // invariants still hold.
-                {
-                    let lock_table = state.lock_table.lock().await;
-                    if prepare.has_reads() && !lock_table.is_currently_holding(tx.clone()) {
-                        return Err(Error::TransactionAborted(
-                            TransactionAbortReason::TransactionLockLost,
-                        ));
-                    }
-                };
+
+                if prepare.has_reads() && !state.lock_table.is_currently_holding(tx.clone()).await {
+                    return Err(Error::TransactionAborted(
+                        TransactionAbortReason::TransactionLockLost,
+                    ));
+                }
+
                 self.acquire_range_lock(state, tx.clone()).await?;
 
                 {
@@ -249,8 +248,7 @@ where
                 return Err(Error::RangeIsNotLoaded)
             }
             State::Loaded(state) => {
-                let mut lock_table = state.lock_table.lock().await;
-                if !lock_table.is_currently_holding(tx.clone()) {
+                if !state.lock_table.is_currently_holding(tx.clone()).await {
                     return Ok(());
                 }
                 {
@@ -262,7 +260,7 @@ where
                         .await
                         .map_err(Error::from_wal_error)?;
                 }
-                lock_table.release();
+                state.lock_table.release().await;
 
                 let _ = self
                     .prefetching_buffer
@@ -284,8 +282,7 @@ where
                 return Err(Error::RangeIsNotLoaded)
             }
             State::Loaded(state) => {
-                let mut lock_table = state.lock_table.lock().await;
-                if !lock_table.is_currently_holding(tx.clone()) {
+                if !state.lock_table.is_currently_holding(tx.clone()).await {
                     // it must be that we already finished committing, but perhaps the coordinator didn't
                     // realize that, so we just return success.
                     return Ok(());
@@ -350,7 +347,7 @@ where
                 // We apply the writes to storage before releasing the lock since we send all
                 // gets to storage directly. We should implement a memtable to allow us to release
                 // the lock sooner.
-                lock_table.release();
+                state.lock_table.release().await;
                 // Process transaction complete and remove the requests from the logs
                 self.prefetching_buffer
                     .process_transaction_complete(tx.id)
@@ -443,7 +440,7 @@ where
                 Ok(LoadedState {
                     range_info,
                     highest_known_epoch,
-                    lock_table: Mutex::new(lock_table::LockTable::new()),
+                    lock_table: lock_table::LockTable::new(),
                     pending_prepare_records: Mutex::new(HashMap::new()),
                 })
             })
@@ -518,8 +515,7 @@ where
         state: &LoadedState,
         tx: Arc<TransactionInfo>,
     ) -> Result<(), Error> {
-        let mut lock_table = state.lock_table.lock().await;
-        let receiver = lock_table.acquire(tx.clone())?;
+        let receiver = state.lock_table.acquire(tx.clone()).await?;
         // TODO: allow timing out locks when transaction timeouts are implemented.
         receiver.await.unwrap();
         Ok(())

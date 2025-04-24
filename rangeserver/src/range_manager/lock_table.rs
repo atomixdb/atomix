@@ -4,6 +4,7 @@ use common::transaction_info::TransactionInfo;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::oneshot;
+use tokio::sync::RwLock;
 
 type UtcDateTime = DateTime<chrono::Utc>;
 pub struct CurrentLockHolder {
@@ -18,30 +19,37 @@ pub struct LockRequest {
     when_requested: UtcDateTime,
 }
 
-// Implements transaction lock table for the range.
-// Currently there is just a single lock for the entire range despite having
-// "Table" in the name, but we might partition the lock to allow for more
-// concurrency down the line.
-pub struct LockTable {
+struct State {
     current_holder: Option<CurrentLockHolder>,
     waiting_for_release: VecDeque<LockRequest>,
     waiting_to_acquire: VecDeque<LockRequest>,
 }
 
+// Implements transaction lock table for the range.
+// Currently there is just a single lock for the entire range despite having
+// "Table" in the name, but we might partition the lock to allow for more
+// concurrency down the line.
+pub struct LockTable {
+    state: RwLock<State>,
+}
+
 impl LockTable {
     pub fn new() -> LockTable {
         LockTable {
-            current_holder: None,
-            waiting_for_release: VecDeque::new(),
-            waiting_to_acquire: VecDeque::new(),
+            state: RwLock::new(State {
+                current_holder: None,
+                waiting_for_release: VecDeque::new(),
+                waiting_to_acquire: VecDeque::new(),
+            }),
         }
     }
-    pub fn maybe_wait_for_current_holder(
-        &mut self,
+    pub async fn maybe_wait_for_current_holder(
+        &self,
         tx: Arc<TransactionInfo>,
     ) -> oneshot::Receiver<()> {
         let (s, r) = oneshot::channel();
-        match &self.current_holder {
+        let mut state = self.state.write().await;
+        match &state.current_holder {
             None => s.send(()).unwrap(),
             Some(_) => {
                 let req = LockRequest {
@@ -49,23 +57,24 @@ impl LockTable {
                     sender: s,
                     when_requested: chrono::Utc::now(),
                 };
-                self.waiting_for_release.push_back(req);
+                state.waiting_for_release.push_back(req);
             }
         };
         r
     }
 
-    pub fn acquire(&mut self, tx: Arc<TransactionInfo>) -> Result<oneshot::Receiver<()>, Error> {
+    pub async fn acquire(&self, tx: Arc<TransactionInfo>) -> Result<oneshot::Receiver<()>, Error> {
         let when_requested = chrono::Utc::now();
         let (s, r) = oneshot::channel();
-        match &self.current_holder {
+        let mut state = self.state.write().await;
+        match &state.current_holder {
             None => {
                 let holder = CurrentLockHolder {
                     transaction: tx.clone(),
                     when_requested,
                     when_acquired: when_requested,
                 };
-                self.current_holder = Some(holder);
+                state.current_holder = Some(holder);
                 s.send(()).unwrap();
                 Ok(r)
             }
@@ -74,7 +83,7 @@ impl LockTable {
                     s.send(()).unwrap();
                     Ok(r)
                 } else {
-                    let highest_waiter = self
+                    let highest_waiter = state
                         .waiting_to_acquire
                         .back()
                         .map_or(current_holder.transaction.id, |r| r.transaction.id);
@@ -87,7 +96,7 @@ impl LockTable {
                             sender: s,
                             when_requested: chrono::Utc::now(),
                         };
-                        self.waiting_to_acquire.push_back(req);
+                        state.waiting_to_acquire.push_back(req);
                         Ok(r)
                     }
                 }
@@ -95,13 +104,14 @@ impl LockTable {
         }
     }
 
-    pub fn release(&mut self) {
-        self.current_holder = None;
-        while !self.waiting_for_release.is_empty() {
-            let req = self.waiting_for_release.pop_front().unwrap();
+    pub async fn release(&self) {
+        let mut state = self.state.write().await;
+        state.current_holder = None;
+        while !state.waiting_for_release.is_empty() {
+            let req = state.waiting_for_release.pop_front().unwrap();
             req.sender.send(()).unwrap();
         }
-        match self.waiting_to_acquire.pop_front() {
+        match state.waiting_to_acquire.pop_front() {
             None => (),
             Some(req) => {
                 let when_acquired = chrono::Utc::now();
@@ -110,14 +120,15 @@ impl LockTable {
                     when_requested: req.when_requested,
                     when_acquired,
                 };
-                self.current_holder = Some(new_holder);
+                state.current_holder = Some(new_holder);
                 req.sender.send(()).unwrap();
             }
         }
     }
 
-    pub fn is_currently_holding(&self, tx: Arc<TransactionInfo>) -> bool {
-        match &self.current_holder {
+    pub async fn is_currently_holding(&self, tx: Arc<TransactionInfo>) -> bool {
+        let state = self.state.read().await;
+        match &state.current_holder {
             None => false,
             Some(current) => current.transaction.id == tx.id,
         }
