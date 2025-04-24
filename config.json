@@ -1,0 +1,49 @@
+{
+    "range_server": {
+        "range_maintenance_duration": {
+            "secs": 1,
+            "nanos": 0
+        },
+        "proto_server_addr": "127.0.0.1:50054",
+        "fast_network_addr": "127.0.0.1:50055"
+    },
+    "universe": {
+        "proto_server_addr": "127.0.0.1:50056"
+    },
+    "frontend": {
+        "proto_server_addr": "127.0.0.1:50057",
+        "fast_network_addr": "127.0.0.1:50058",
+        "transaction_overall_timeout": {
+            "secs": 10,
+            "nanos": 0
+        }
+    },
+    "epoch": {
+        "proto_server_addr": "127.0.0.1:50050",
+        "epoch_duration": {
+            "secs": 0,
+            "nanos": 10000000
+        }
+    },
+    "cassandra": {
+        "cql_addr": "127.0.0.1:9042"
+    },
+    "regions": {
+        "test-region": {
+            "warden_address": "127.0.0.1:50053",
+            "epoch_publishers": [
+                {
+                    "name": "ps1",
+                    "zone": "test-region/a",
+                    "publishers": [
+                        {
+                            "name": "ep1",
+                            "backend_addr": "127.0.0.1:50051",
+                            "fast_network_addr": "127.0.0.1:50052"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}
