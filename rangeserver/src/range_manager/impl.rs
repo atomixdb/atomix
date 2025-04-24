@@ -24,7 +24,7 @@ use tonic::async_trait;
 
 struct LoadedState {
     range_info: RwLock<RangeInfo>,
-    // highest_known_epoch: RwLock<u64>,
+    highest_known_epoch: RwLock<u64>,
     lock_table: RwLock<lock_table::LockTable>,
     // TODO: need more efficient representation of prepares than raw bytes.
     pending_prepare_records: RwLock<HashMap<Uuid, Bytes>>,
@@ -246,13 +246,14 @@ where
                     pending_prepare_records
                         .insert(tx.id, Bytes::copy_from_slice(prepare._tab.buf()));
                 }
-                let (highest_known_epoch, epoch_lease) = {
+                let epoch_lease = {
                     let range_info = state.range_info.read().await;
-                    (range_info.highest_known_epoch, range_info.epoch_lease)
+                    range_info.epoch_lease
                 };
+                let highest_known_epoch = state.highest_known_epoch.read().await;
 
                 Ok(PrepareResult {
-                    highest_known_epoch,
+                    highest_known_epoch: *highest_known_epoch,
                     epoch_lease,
                 })
             }
@@ -315,9 +316,8 @@ where
                     }
                 }
                 {
-                    let mut range_info = state.range_info.write().await;
-                    range_info.highest_known_epoch =
-                        std::cmp::max(range_info.highest_known_epoch, commit.epoch());
+                    let mut highest_known_epoch = state.highest_known_epoch.write().await;
+                    *highest_known_epoch = std::cmp::max(*highest_known_epoch, commit.epoch());
                 }
                 // TODO: handle potential duplicates here.
                 self.wal
@@ -457,7 +457,6 @@ where
                     .await
                     .map_err(Error::from_storage_error)?;
                 range_info.epoch_lease = (new_epoch_lease_lower_bound, new_epoch_lease_upper_bound);
-                range_info.highest_known_epoch = highest_known_epoch;
                 wal.sync().await.map_err(Error::from_wal_error)?;
                 // Create a recurrent task to renew.
                 bg_runtime.spawn(async move {
@@ -473,6 +472,7 @@ where
                 // TODO: apply WAL here!
                 Ok(LoadedState {
                     range_info: RwLock::new(range_info),
+                    highest_known_epoch: RwLock::new(highest_known_epoch),
                     lock_table: RwLock::new(lock_table::LockTable::new()),
                     pending_prepare_records: RwLock::new(HashMap::new()),
                 })
@@ -535,8 +535,10 @@ where
                     "Epoch lease changed by someone else, but only this task should be changing it!"
                 );
                 range_info.epoch_lease = new_lease;
-                range_info.highest_known_epoch =
-                    std::cmp::max(range_info.highest_known_epoch, highest_known_epoch);
+                {
+                    let mut highest_known_epoch_old = state.highest_known_epoch.write().await;
+                    *highest_known_epoch_old = std::cmp::max(*highest_known_epoch_old, highest_known_epoch);
+                }
             } else {
                 return Err(Error::RangeIsNotLoaded);
             }
@@ -550,9 +552,10 @@ where
         state: &LoadedState,
         tx: Arc<TransactionInfo>,
     ) -> Result<(), Error> {
+        let receiver = {
         let mut lock_table = state.lock_table.write().await;
-        let receiver = lock_table.acquire(tx.clone())?;
-        drop(lock_table);
+            lock_table.acquire(tx.clone())?
+        };
         // TODO: allow timing out locks when transaction timeouts are implemented.
         receiver.await.unwrap();
         Ok(())
