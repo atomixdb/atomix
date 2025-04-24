@@ -60,6 +60,9 @@ where
     W: Wal,
 {
     async fn load(&self) -> Result<(), Error> {
+        if let State::Loaded(_) = self.state.read().await.deref() {
+            return Ok(());
+        }
         let sender = {
             let mut state = self.state.write().await;
             match state.deref_mut() {
@@ -142,7 +145,7 @@ where
     }
 
     async fn get(&self, tx: Arc<TransactionInfo>, key: Bytes) -> Result<GetResult, Error> {
-        let s = self.state.write().await;
+        let s = self.state.read().await;
         match s.deref() {
             State::NotLoaded | State::Unloaded | State::Loading(_) => Err(Error::RangeIsNotLoaded),
             State::Loaded(state) => {
@@ -184,7 +187,7 @@ where
         tx: Arc<TransactionInfo>,
         prepare: PrepareRequest<'_>,
     ) -> Result<PrepareResult, Error> {
-        let s = self.state.write().await;
+        let s = self.state.read().await;
         match s.deref() {
             State::NotLoaded | State::Unloaded | State::Loading(_) => {
                 return Err(Error::RangeIsNotLoaded)
@@ -242,7 +245,7 @@ where
     }
 
     async fn abort(&self, tx: Arc<TransactionInfo>, abort: AbortRequest<'_>) -> Result<(), Error> {
-        let s = self.state.write().await;
+        let s = self.state.read().await;
         match s.deref() {
             State::NotLoaded | State::Unloaded | State::Loading(_) => {
                 return Err(Error::RangeIsNotLoaded)
@@ -276,6 +279,8 @@ where
         tx: Arc<TransactionInfo>,
         commit: CommitRequest<'_>,
     ) -> Result<(), Error> {
+        // Acquiring the state latch in write mode is fine for now since the committing transaction should
+        // be holding the (only) range lock, but once we break up the lock we should revisit this.
         let mut s = self.state.write().await;
         match s.deref_mut() {
             State::NotLoaded | State::Unloaded | State::Loading(_) => {
@@ -313,6 +318,7 @@ where
                 // should go in parallel not sequentially.
                 // We should also add retries in case of intermittent failures. Note that all our
                 // storage operations here are idempotent and safe to retry any number of times.
+                // We also don't need to be holding the state latch for that long.
                 for put in prepare_record.puts().iter() {
                     for put in put.iter() {
                         // TODO: too much copying :(
