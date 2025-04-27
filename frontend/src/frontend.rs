@@ -399,7 +399,7 @@ impl Server {
             coordinator,
             transaction_table: RwLock::new(HashMap::new()),
             bg_runtime,
-            transaction_counter: AtomicU64::new(0),
+            transaction_counter,
         })
     }
 
