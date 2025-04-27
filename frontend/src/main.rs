@@ -3,12 +3,12 @@ use common::{
     network::{fast_network::FastNetwork, for_testing::udp_fast_network::UdpFastNetwork},
     region::{Region, Zone},
 };
+use frontend::frontend::Server;
+use std::sync::atomic::AtomicU64;
 use std::{
     net::{ToSocketAddrs, UdpSocket},
     sync::Arc,
 };
-
-use frontend::frontend::Server;
 use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -72,6 +72,7 @@ fn main() {
             runtime_handle,
             bg_runtime_clone,
             ct_clone,
+            AtomicU64::new(0),
         )
         .await;
 
