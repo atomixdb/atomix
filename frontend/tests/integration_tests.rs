@@ -9,17 +9,17 @@ use std::time;
 use uuid::Uuid;
 
 use coordinator::keyspace::Keyspace;
-use once_cell::sync::Lazy;
-use std::collections::HashSet;
-use std::net::UdpSocket;
-use std::sync::Arc;
-use tokio_util::sync::CancellationToken;
-
 use frontend::for_testing::{
     mock_epoch_publisher::MockEpochPublisher, mock_rangeserver::MockRangeServer,
     mock_universe::MockUniverse,
 };
 use frontend::{frontend::Server, range_assignment_oracle::RangeAssignmentOracle};
+use once_cell::sync::Lazy;
+use std::collections::HashSet;
+use std::net::UdpSocket;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use proto::frontend::frontend_client::FrontendClient;
@@ -170,6 +170,7 @@ async fn setup() -> TestContext {
             RUNTIME.handle().clone(),
             RUNTIME.handle().clone(),
             cancellation_token.clone(),
+            AtomicU64::new(0),
         )
         .await;
         Server::start(server).await;
