@@ -236,12 +236,35 @@ where
                 // Validate the transaction lock is not lost, this is essential to ensure 2PL
                 // invariants still hold.
 
+                // Check if transaction has no writes
+                let has_writes = !(prepare.puts().unwrap_or_default().is_empty()
+                    && prepare.deletes().unwrap_or_default().is_empty());
+
+                // For read-only transactions
+                if !has_writes {
+                    // If transaction has reads, verify lock and release it
+                    if prepare.has_reads() {
+                        if !state.lock_table.is_currently_holding(tx.clone()).await {
+                            return Err(Error::TransactionAborted(
+                                TransactionAbortReason::TransactionLockLost,
+                            ));
+                        }
+                        state.lock_table.release().await;
+                    }
+
+                    // Return early for read-only transactions
+                    return Ok(PrepareResult {
+                        highest_known_epoch: state.highest_known_epoch.read().await,
+                        epoch_lease: state.range_info.epoch_lease,
+                    });
+                }
+
+                // For transactions with writes, verify read lock if needed
                 if prepare.has_reads() && !state.lock_table.is_currently_holding(tx.clone()).await {
                     return Err(Error::TransactionAborted(
                         TransactionAbortReason::TransactionLockLost,
                     ));
                 }
-
                 self.acquire_range_lock(state, tx.clone()).await?;
                 {
                     // TODO: probably don't need holding that latch while writing to the WAL.
