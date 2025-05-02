@@ -95,7 +95,7 @@ def kubectl_apply_and_wait_for_sts(yaml_file: str, statefulset: str, namespace: 
 
 
 def wait_until_cassandra_cql_ready(
-    pod_name: str, namespace: str, retries: int = 10, time_between_retries: int = 20
+    pod_name: str, namespace: str, retries: int = 20, time_between_retries: int = 15
 ):
     fails = 0
     while True:
@@ -150,10 +150,6 @@ def main():
 
     log.info("Creating namespace")
     run(["kubectl", "apply", "-f", "namespace.yaml"], check=True)
-
-    log.info("Creating config map")
-    config_file = REPO_ROOT + "/configs/config.json"
-    kubectl_create_config_map("atomix-config", ATOMIX_NAMESPACE, config_file)
 
     log.info("Deploying Cassandra")
     kubectl_apply_and_wait_for_sts("cassandra.yaml", "cassandra", ATOMIX_NAMESPACE)

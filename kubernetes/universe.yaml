@@ -26,7 +26,7 @@ spec:
           containerPort: 50056
         workingDir: /etc/atomix
         command: ["/bin/sh", "-c"]
-        args: ["cat /etc/atomix/config.json && universe"]
+        args: ["cat /etc/atomix/config.json && universe --config /etc/atomix/config.json"]
         volumeMounts:
         - name: config
           mountPath: /etc/atomix

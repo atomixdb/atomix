@@ -27,7 +27,7 @@ spec:
         - containerPort: 50053
         workingDir: /etc/atomix
         command: ["/bin/sh", "-c"]
-        args: ["cat /etc/atomix/config.json && warden"]
+        args: ["cat /etc/atomix/config.json && warden --config /etc/atomix/config.json"]
         volumeMounts:
         - name: config
           mountPath: /etc/atomix

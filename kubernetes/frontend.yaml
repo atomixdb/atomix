@@ -23,7 +23,7 @@ spec:
         imagePullPolicy: IfNotPresent
         workingDir: /etc/atomix
         command: ["/bin/sh", "-c"]
-        args: ["cat /etc/atomix/config.json && frontend"]
+        args: ["cat /etc/atomix/config.json && frontend --config /etc/atomix/config.json"]
         env:
           - name: RUST_BACKTRACE
             value: "1"
