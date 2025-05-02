@@ -4,21 +4,25 @@ import time
 import logging
 import argparse
 from subprocess import run, check_output
+from pathlib import Path
 
+REPO_ROOT = str(Path(__file__).parent.parent)
 
 log = logging.getLogger(__name__)
 
 
 ATOMIX_NAMESPACE = "atomix"
 ATOMIX_KEYSPACE = "atomix"
-CASSANDRA_KEYSPACE_CQL = "../schema/cassandra/atomix/keyspace.cql"
-CASSANDRA_SCHEMA_CQL = "../schema/cassandra/atomix/schema.cql"
+CASSANDRA_KEYSPACE_CQL = REPO_ROOT + "/schema/cassandra/atomix/keyspace.cql"
+CASSANDRA_SCHEMA_CQL = REPO_ROOT + "/schema/cassandra/atomix/schema.cql"
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Deploy atomix to K8s")
     return parser.parse_args()
 
+def kubectl_create_config_map(name: str, namespace: str, config_file: str):
+    run(["kubectl", "create", "configmap", name, "-n", namespace, "--from-file=" + config_file], check=True)
 
 def kubectl_list_namespaces():
     """List all namespaces in the k8s cluster."""
@@ -91,7 +95,7 @@ def kubectl_apply_and_wait_for_sts(yaml_file: str, statefulset: str, namespace: 
 
 
 def wait_until_cassandra_cql_ready(
-    pod_name: str, namespace: str, retries: int = 10, time_between_retries: int = 15
+    pod_name: str, namespace: str, retries: int = 10, time_between_retries: int = 20
 ):
     fails = 0
     while True:
@@ -146,6 +150,10 @@ def main():
 
     log.info("Creating namespace")
     run(["kubectl", "apply", "-f", "namespace.yaml"], check=True)
+
+    log.info("Creating config map")
+    config_file = REPO_ROOT + "/configs/config.json"
+    kubectl_create_config_map("atomix-config", ATOMIX_NAMESPACE, config_file)
 
     log.info("Deploying Cassandra")
     kubectl_apply_and_wait_for_sts("cassandra.yaml", "cassandra", ATOMIX_NAMESPACE)

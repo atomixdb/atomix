@@ -34,7 +34,7 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: atomix-warden-config
+          name: atomix-config
 
 ---
 apiVersion: v1
@@ -51,57 +51,3 @@ spec:
     - protocol: TCP
       port: 50053
       targetPort: 50053
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: atomix-warden-config
-  namespace: atomix
-data:
-  config.json: |
-    {
-        "range_server": {
-            "range_maintenance_duration": {
-                "secs": 1,
-                "nanos": 0
-            },
-            "proto_server_addr": "0.0.0.0:50054",
-            "fast_network_addr": "0.0.0.0:50055"
-        },
-        "universe": {
-            "proto_server_addr": "atomix-universe:50056"
-        },
-        "frontend": {
-            "proto_server_addr": "127.0.0.1:50057",
-            "fast_network_addr": "127.0.0.1:50058",
-            "transaction_overall_timeout": {
-                "secs": 10,
-                "nanos": 0
-            }
-        },
-        "epoch": {
-            "proto_server_addr": "atomix-epoch:50050"
-        },
-        "cassandra": {
-            "cql_addr": "cassandra:9042"
-        },
-        "regions": {
-            "test-region": {
-                "warden_address": "0.0.0.0:50053",
-                "epoch_publishers": [
-                    {
-                        "name": "ps1",
-                        "zone": "test-region/a",
-                        "publishers": [
-                            {
-                                "name": "ep1",
-                                "backend_addr": "atomix-epoch-publisher:50051",
-                                "fast_network_addr": "atomix-epoch-publisher:50052"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-    }

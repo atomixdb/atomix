@@ -42,7 +42,7 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: atomix-frontend-config
+          name: atomix-config
 ---
 apiVersion: v1
 kind: Service
@@ -62,57 +62,3 @@ spec:
       port: 50058
       targetPort: 50058
       name: fast-network
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: atomix-frontend-config
-  namespace: atomix
-data:
-  config.json: |
-    {
-        "range_server": {
-            "range_maintenance_duration": {
-                "secs": 1,
-                "nanos": 0
-            },
-            "proto_server_addr": "0.0.0.0:50054",
-            "fast_network_addr": "0.0.0.0:50055"
-        },
-        "universe": {
-            "proto_server_addr": "atomix-universe:50056"
-        },
-        "epoch": {
-            "proto_server_addr": "atomix-epoch:50050"
-        },
-        "frontend": {
-            "proto_server_addr": "127.0.0.1:50057",
-            "fast_network_addr": "127.0.0.1:50058",
-            "transaction_overall_timeout": {
-                "secs": 10,
-                "nanos": 0
-            }
-        },
-        "cassandra": {
-            "cql_addr": "cassandra:9042"
-        },
-        "regions": {
-            "test-region": {
-                "warden_address": "atomix-warden:50053",
-                "epoch_publishers": [
-                    {
-                        "name": "ps1",
-                        "zone": "test-region/a",
-                        "publishers": [
-                            {
-                                "name": "ep1",
-                                "backend_addr": "atomix-epoch-publisher:50051",
-                                "fast_network_addr": "atomix-epoch-publisher:50052"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-    }
