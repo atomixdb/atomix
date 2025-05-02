@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use common::{
-    config::Config, network::fast_network::FastNetwork, region::Zone,
+    config::Config, keyspace::Keyspace, network::fast_network::FastNetwork, region::Zone,
     transaction_info::TransactionInfo,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use coordinator::{coordinator::Coordinator, keyspace::Keyspace, transaction::Transaction};
+use coordinator::{coordinator::Coordinator, transaction::Transaction};
 use tonic::{transport::Server as TServer, Request, Response, Status as TStatus};
 
 use std::net::ToSocketAddrs;
