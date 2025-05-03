@@ -118,7 +118,7 @@ def wait_until_cassandra_cql_ready(
         except:
             fails += 1
             if fails > retries:
-                log.fatal("Cassandra not ready after 10 tries")
+                log.fatal("Cassandra not ready after %d tries", retries)
                 sys.exit(1)
             log.info(
                 "Cassandra not ready, retrying in %d seconds", time_between_retries
