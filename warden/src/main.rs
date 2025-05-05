@@ -1,6 +1,8 @@
+use clap::Parser;
 use common::config::Config;
 use common::region::Region;
 use server::run_warden_server;
+use std::fs::read_to_string;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -8,18 +10,30 @@ mod assignment_computation;
 mod persistence;
 mod server;
 
+#[derive(Parser, Debug)]
+#[command(name = "warden")]
+#[command(about = "Warden", long_about = None)]
+struct Args {
+    #[arg(long, default_value = "configs/config.json")]
+    config: String,
+
+    #[arg(long, default_value = "test-region")]
+    region: String,
+
+    #[arg(long, default_value = "a")]
+    zone: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let subscriber = tracing_subscriber::fmt::Subscriber::new();
     tracing::subscriber::set_global_default(subscriber)?;
     info!("Hello, Warden!");
-    // TODO(tamer): take the config path as an argument.
-    let config: Config =
-        serde_json::from_str(&std::fs::read_to_string("config.json").unwrap()).unwrap();
-    //TODO(tamer): the region should be passed in as an argument or environment.
+    let args = Args::parse();
+    let config: Config = serde_json::from_str(&read_to_string(&args.config).unwrap()).unwrap();
     let region = Region {
         cloud: None,
-        name: "test-region".into(),
+        name: args.region.into(),
     };
     let region_config = config.regions.get(&region).unwrap();
     let addr = region_config.warden_address.to_string();

@@ -4,6 +4,7 @@ pub mod epoch_lease;
 pub mod full_range_id;
 pub mod host_info;
 pub mod key_range;
+pub mod keyspace;
 pub mod keyspace_id;
 pub mod membership;
 pub mod network;

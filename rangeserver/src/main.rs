@@ -1,4 +1,6 @@
+use clap::Parser;
 use std::{
+    fs::read_to_string,
     net::{ToSocketAddrs, UdpSocket},
     sync::Arc,
 };
@@ -15,11 +17,30 @@ use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+#[derive(Parser, Debug)]
+#[command(name = "rangeserver")]
+#[command(about = "Rangeserver", long_about = None)]
+struct Args {
+    #[arg(long, default_value = "configs/config.json")]
+    config: String,
+
+    #[arg(long, default_value = "test-region")]
+    region: String,
+
+    #[arg(long, default_value = "a")]
+    zone: String,
+
+    #[arg(long, default_value = "test_server")]
+    identity: String,
+
+    #[arg(long, default_value = "127.0.0.1:50054")]
+    address: String,
+}
+
 fn main() {
     tracing_subscriber::fmt::init();
-    // TODO(tamer): take the config path as an argument.
-    let config: Config =
-        serde_json::from_str(&std::fs::read_to_string("config.json").unwrap()).unwrap();
+    let args = Args::parse();
+    let config: Config = serde_json::from_str(&read_to_string(&args.config).unwrap()).unwrap();
 
     let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     let runtime_handle = runtime.handle().clone();
@@ -42,7 +63,20 @@ fn main() {
     });
     let server_handle = runtime.spawn(async move {
         let cancellation_token = CancellationToken::new();
-        let host_info = get_host_info();
+        let host_info = HostInfo {
+            identity: HostIdentity {
+                name: args.identity.into(),
+                zone: Zone {
+                    region: Region {
+                        cloud: None,
+                        name: args.region.into(),
+                    },
+                    name: args.zone.into(),
+                },
+            },
+            address: args.address.parse().unwrap(),
+            warden_connection_epoch: 0,
+        };
         let region_config = config.regions.get(&host_info.identity.zone.region).unwrap();
         let publisher_set = region_config
             .epoch_publishers
@@ -88,26 +122,4 @@ fn main() {
     });
     info!("Starting RangeServer...");
     runtime.block_on(server_handle).unwrap().unwrap();
-}
-
-fn get_host_info() -> HostInfo {
-    // TODO: should be read from enviroment!
-    let identity: String = "test_server".into();
-    let region = Region {
-        cloud: None,
-        name: "test-region".into(),
-    };
-    let zone = Zone {
-        region: region.clone(),
-        name: "a".into(),
-    };
-    HostInfo {
-        identity: HostIdentity {
-            name: identity.clone(),
-            zone,
-        },
-        address: "127.0.0.1:50054".parse().unwrap(),
-
-        warden_connection_epoch: 0,
-    }
 }

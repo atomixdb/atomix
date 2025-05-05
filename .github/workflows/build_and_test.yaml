@@ -82,6 +82,11 @@ jobs:
     steps:
     - uses: actions/checkout@v3
       name: Check out the repository code
+      with:
+        minikube-version: 'v1.33.1'
+        driver: docker
+        memory: 5120
+        cpus: 2
 
     - name: Start minikube
       uses: medyagh/setup-minikube@master

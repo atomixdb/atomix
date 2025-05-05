@@ -328,6 +328,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap"
+version = "4.5.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eccb054f56cbd38340b380d4a8e69ef1f02f1af43db2f0cc817a4774d80ae071"
+dependencies = [
+ "clap_builder",
+ "clap_derive",
+]
+
+[[package]]
+name = "clap_builder"
+version = "4.5.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efd9466fac8543255d3b1fcad4762c5e116ffe808c8a3043d4263cd4fd4862a2"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "clap_lex",
+ "strsim",
+]
+
+[[package]]
+name = "clap_derive"
+version = "4.5.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09176aae279615badda0765c0c0b3f6ed53f4709118af73cf4655d85d1530cd7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.77",
+]
+
+[[package]]
+name = "clap_lex"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
+
+[[package]]
 name = "colorchoice"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -464,6 +504,7 @@ name = "epoch"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "clap",
  "common",
  "proto",
  "scylla 0.13.2",
@@ -484,6 +525,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "chrono",
+ "clap",
  "common",
  "flatbuf",
  "flatbuffers",
@@ -594,6 +636,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "chrono",
+ "clap",
  "common",
  "coordinator",
  "epoch_reader",
@@ -1384,6 +1427,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "chrono",
+ "clap",
  "common",
  "epoch_publisher",
  "epoch_reader",
@@ -2133,6 +2177,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "chrono",
+ "clap",
  "common",
  "once_cell",
  "pin-project",
@@ -2202,6 +2247,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "chrono",
+ "clap",
  "common",
  "futures",
  "once_cell",

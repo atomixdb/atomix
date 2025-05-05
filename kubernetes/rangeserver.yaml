@@ -20,7 +20,7 @@ spec:
         imagePullPolicy: IfNotPresent
         workingDir: /etc/atomix
         command: ["/bin/sh", "-c"]
-        args: ["cat /etc/atomix/config.json && rangeserver"]
+        args: ["cat /etc/atomix/config.json && rangeserver --config /etc/atomix/config.json"]
         env:
           - name: RUST_BACKTRACE
             value: "1"
@@ -81,11 +81,15 @@ data:
             "proto_server_addr": "atomix-universe:50056"
         },
         "epoch": {
-            "proto_server_addr": "atomix-epoch:50050"
+            "proto_server_addr": "atomix-epoch:50050",
+            "epoch_duration": {
+                "secs": 0,
+                "nanos": 1000000000
+            }
         },
         "frontend": {
-            "proto_server_addr": "127.0.0.1:50057",
-            "fast_network_addr": "127.0.0.1:50058",
+            "proto_server_addr": "0.0.0.0:50057",
+            "fast_network_addr": "0.0.0.0:50058",
             "transaction_overall_timeout": {
                 "secs": 10,
                 "nanos": 0

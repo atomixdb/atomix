@@ -1,9 +1,9 @@
-use std::{net::ToSocketAddrs, sync::Arc};
-
-use common::config::Config;
+use clap::Parser;
 use std::net::UdpSocket;
+use std::{fs::read_to_string, net::ToSocketAddrs, sync::Arc};
 
 use common::{
+    config::Config,
     network::{fast_network::FastNetwork, for_testing::udp_fast_network::UdpFastNetwork},
     region::{Region, Zone},
 };
@@ -12,22 +12,41 @@ use epoch_publisher::server;
 use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Parser, Debug)]
+#[command(name = "epoch_publisher")]
+#[command(about = "Epoch Publisher", long_about = None)]
+struct Args {
+    #[arg(long, default_value = "configs/config.json")]
+    config: String,
+
+    #[arg(long, default_value = "test-region")]
+    region: String,
+
+    #[arg(long, default_value = "a")]
+    zone: String,
+
+    #[arg(long, default_value = "ps1")]
+    publisher_set_name: String,
+
+    #[arg(long, default_value = "ep1")]
+    publisher_name: String,
+}
+
 fn main() {
     tracing_subscriber::fmt::init();
-    // TODO(tamer): take the config path as an argument.
-    let config: Config =
-        serde_json::from_str(&std::fs::read_to_string("config.json").unwrap()).unwrap();
-    //TODO(tamer): the name, zone etc should be passed in as an argument or environment.
+    let args = Args::parse();
+    let config: Config = serde_json::from_str(&read_to_string(&args.config).unwrap()).unwrap();
+
     let region = Region {
         cloud: None,
-        name: "test-region".into(),
+        name: args.region.into(),
     };
     let zone = Zone {
         region: region.clone(),
-        name: "a".into(),
+        name: args.zone.into(),
     };
-    let publisher_set_name = "ps1";
-    let publisher_name = "ep1";
+    let publisher_set_name = args.publisher_set_name;
+    let publisher_name = args.publisher_name;
     let region_config = config.regions.get(&region).unwrap();
     let publisher_set = region_config
         .epoch_publishers
