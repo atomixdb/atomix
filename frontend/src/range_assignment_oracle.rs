@@ -6,7 +6,7 @@ use common::membership::range_assignment_oracle::RangeAssignmentOracle as RangeA
 use common::{
     full_range_id::FullRangeId,
     host_info::{HostIdentity, HostInfo},
-    keyspace::Keyspace,
+    key_range::KeyRange,
     keyspace_id::KeyspaceId,
     region::{Region, Zone},
 };
@@ -92,7 +92,8 @@ impl RangeAssignmentOracleTrait for RangeAssignmentOracle {
         let keyspace_info = keyspace_info_guard.get(&keyspace_info_cache_key).unwrap();
         let keyspace_id = KeyspaceId::from_str(&keyspace_info.keyspace_id).unwrap();
         for range in keyspace_info.base_key_ranges.iter() {
-            if range.lower_bound_inclusive <= key && key < range.upper_bound_exclusive {
+            let key_range = KeyRange::from(range);
+            if key_range.includes(key.clone()) {
                 let full_range_id = FullRangeId {
                     keyspace_id: keyspace_id.clone(),
                     range_id: Uuid::parse_str(&range.base_range_uuid).unwrap(),

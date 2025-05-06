@@ -34,6 +34,15 @@ impl KeyRange {
     }
 }
 
+impl From<&proto::universe::KeyRange> for KeyRange {
+    fn from(key_range: &proto::universe::KeyRange) -> Self {
+        KeyRange {
+            lower_bound_inclusive: Some(Bytes::from(key_range.lower_bound_inclusive.clone())),
+            upper_bound_exclusive: Some(Bytes::from(key_range.upper_bound_exclusive.clone())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
