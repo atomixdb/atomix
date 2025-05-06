@@ -545,6 +545,7 @@ where
                         storage,
                         state,
                         lease_renewal_interval,
+                        num_epochs_per_lease,
                     )
                     .await
                 });
@@ -567,6 +568,7 @@ where
         storage: Arc<S>,
         state: Arc<RwLock<State>>,
         lease_renewal_interval: std::time::Duration,
+        num_epochs_per_lease: u64,
     ) -> Result<(), Error> {
         loop {
             let leader_sequence_number: u64;
@@ -583,29 +585,32 @@ where
                 tokio::time::sleep(lease_renewal_interval).await;
                 continue;
             }
+            // How far are we from the current lease expiring? Check so we don't
+            // end up taking the lease for an unbounded amount of epochs.
+            let num_epochs_left = old_lease.1.saturating_sub(epoch);
+            if num_epochs_left > 2 * num_epochs_per_lease {
+                tokio::time::sleep(lease_renewal_interval).await;
+                continue;
+            }
             // TODO: If we renew too often, this could get out of hand.
             // We should probably limit the max number of epochs in the future
             // we can request a lease for.
             let new_epoch_lease_lower_bound = std::cmp::max(highest_known_epoch, old_lease.1 + 1);
-            let new_epoch_lease_upper_bound = new_epoch_lease_lower_bound + 100;
-            // TODO: We should handle some errors here. For example:
-            // - If the error seems transient (e.g., a timeout), we should retry.
-            // - If the error is something like RangeOwnershipLost, we should unload the range.
-            storage
-                .renew_epoch_lease(
-                    range_id,
-                    (new_epoch_lease_lower_bound, new_epoch_lease_upper_bound),
-                    leader_sequence_number,
-                )
-                .await
-                .map_err(Error::from_storage_error)?;
-
+            let new_epoch_lease_upper_bound = new_epoch_lease_lower_bound + num_epochs_per_lease;
             // Update the state.
             // If our new lease continues from our old lease, merge the ranges.
             let mut new_lease = (new_epoch_lease_lower_bound, new_epoch_lease_upper_bound);
             if (new_epoch_lease_lower_bound - old_lease.1) == 1 {
                 new_lease = (old_lease.0, new_epoch_lease_upper_bound);
             }
+            // TODO: We should handle some errors here. For example:
+            // - If the error seems transient (e.g., a timeout), we should retry.
+            // - If the error is something like RangeOwnershipLost, we should unload the range.
+            storage
+                .renew_epoch_lease(range_id, new_lease, leader_sequence_number)
+                .await
+                .map_err(Error::from_storage_error)?;
+
             if let State::Loaded(state) = state.write().await.deref_mut() {
                 // This should never happen as only this task changes the epoch lease.
                 assert_eq!(
