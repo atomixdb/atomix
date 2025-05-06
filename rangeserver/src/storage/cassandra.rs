@@ -25,12 +25,15 @@ struct CqlEpochRange {
 
 #[derive(Debug, FromRow, ValueList)]
 struct CqlRangeLease {
+    // Order needs to be the same as in the CQL table definition.
+    // TODO: This is fixed in later scylla client versions. See:
+    // https://github.com/scylladb/scylla-rust-driver/issues/370
     range_id: Uuid,
     range_type: RangeType,
-    epoch_lease: CqlEpochRange,
     key_lower_bound_inclusive: Option<Vec<u8>>,
     key_upper_bound_exclusive: Option<Vec<u8>>,
     leader_sequence_number: i64,
+    epoch_lease: CqlEpochRange,
     safe_snapshot_epochs: CqlEpochRange,
 }
 
@@ -59,7 +62,7 @@ impl CqlRangeLease {
 }
 
 static GET_RANGE_LEASE_QUERY: &str = r#"
-  SELECT * FROM atomix.range_leases
+  SELECT range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs FROM atomix.range_leases
     WHERE range_id = ?;
 "#;
 
@@ -126,6 +129,7 @@ impl Cassandra {
                     panic!("found multiple ranges with the same id!");
                 } else {
                     let row = rows.pop().unwrap();
+                    // Print row as is for debugging purposes
                     let row = row.into_typed::<CqlRangeLease>().unwrap();
                     Ok(row)
                 }
@@ -287,6 +291,16 @@ impl Storage for Cassandra {
 pub mod for_testing {
     use super::*;
     use common::keyspace_id::KeyspaceId;
+    use scylla::{
+        query::{self, Query},
+        statement::SerialConsistency,
+    };
+
+    static INSERT_INTO_RANGE_LEASE_QUERY: &str = r#"
+    INSERT INTO atomix.range_leases(range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      IF NOT EXISTS
+  "#;
 
     impl Cassandra {
         async fn create_test() -> Cassandra {
@@ -339,9 +353,23 @@ pub mod for_testing {
                 upper_bound_inclusive: 0,
             },
         };
+        let mut query = Query::new(INSERT_INTO_RANGE_LEASE_QUERY);
+        query.set_serial_consistency(Some(SerialConsistency::Serial));
+
         cassandra
             .session
-            .query("INSERT INTO atomix.range_leases (range_id, leader_sequence_number, epoch_lease, safe_snapshot_epochs) VALUES (?, ?, ?, ?) IF NOT EXISTS", (cql_range.range_id, cql_range.leader_sequence_number, cql_range.epoch_lease, cql_range.safe_snapshot_epochs))
+            .query(
+                query,
+                (
+                    cql_range.range_id,
+                    cql_range.range_type.clone(),
+                    cql_range.key_lower_bound_inclusive.clone(),
+                    cql_range.key_upper_bound_exclusive.clone(),
+                    cql_range.leader_sequence_number,
+                    cql_range.epoch_lease,
+                    cql_range.safe_snapshot_epochs,
+                ),
+            )
             .await
             .unwrap();
         TestContext {

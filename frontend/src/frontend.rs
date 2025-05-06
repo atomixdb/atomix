@@ -175,6 +175,7 @@ impl Frontend for ProtoServer {
     ///   - status: Success message
     #[instrument(skip(self))]
     async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutResponse>, TStatus> {
+        println!("Got a request: {:?}", request);
         let req = request.get_ref();
 
         let transaction_id = Uuid::parse_str(&req.transaction_id).map_err(|e| {
@@ -199,7 +200,6 @@ impl Frontend for ProtoServer {
                 .ok_or_else(|| TStatus::not_found("Transaction not found"))?
                 .clone()
         };
-
         let result = {
             let mut tx = transaction.lock().await;
             tx.put(&keyspace, key, value)

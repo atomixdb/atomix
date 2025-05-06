@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 type EpochLease = (u64, u64);
 
+#[derive(Clone, Debug)]
 pub struct RangeInfo {
     pub id: Uuid,
     pub key_range: KeyRange,

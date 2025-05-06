@@ -1,6 +1,7 @@
 CREATE TABLE range_map (
     keyspace_id                  uuid,
     range_id                     uuid,
+    range_type                   text,
     key_lower_bound_inclusive    blob,
     key_upper_bound_exclusive    blob,
     assignee                     text,

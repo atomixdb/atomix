@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tokio_stream::wrappers::{ReceiverStream, WatchStream};
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
 use tonic::{transport::Server as TServer, Request, Response, Status as TStatus};
 
@@ -44,6 +44,7 @@ use proto::rangeserver::{
     replicate_request, replicate_response, PrefetchRequest, PrefetchResponse,
     ReplicateInitResponse, ReplicateRequest, ReplicateResponse,
 };
+use tracing::{error, info};
 
 use crate::prefetching_buffer::PrefetchingBuffer;
 
@@ -167,7 +168,7 @@ where
 
         // Start the replication stream
         let send_stream = Box::pin(ReceiverStream::new(send_rx));
-        rm.start_replication(stream, send_tx)
+        rm.start_replication(Box::pin(stream), send_tx)
             .await
             .map_err(|e| TStatus::internal(format!("Failed to set replication stream: {:?}", e)))?;
         Ok(Response::new(send_stream))
@@ -218,6 +219,7 @@ where
     }
 
     async fn maybe_start_transaction(&self, id: Uuid, info: Option<FlatbufTransactionInfo<'_>>) {
+        info!("Transaction maybe starting: {}", id);
         let info = match info {
             None => return,
             Some(info) => info,
@@ -233,6 +235,7 @@ where
             overall_timeout,
         });
         tx_table.insert(id, tx_info);
+        info!("Transaction starting: {}", id);
     }
 
     async fn get_or_create_transaction_info(&self, id: Uuid) -> Arc<TransactionInfo> {
@@ -758,8 +761,24 @@ where
                                     }
                                 }
                                 crate::warden_handler::WardenUpdate::NewReplicationMapping(rm) => {
-                                    todo!("implement load replication mapping")
-                                    // Configure the primary range to send
+                                    // todo!("implement load replication mapping");
+                                    // TODO(yanniszark): implement load replication mapping
+                                    // Get the primary range
+                                    let primary_range = server.maybe_load_and_get_primary_range(&rm.primary_range).await;
+                                    let primary_range = match primary_range {
+                                        Ok(range) => range,
+                                        Err(e) => {
+                                            error!("Failed to load primary range: {:?}", e);
+                                            continue;
+                                        }
+                                    };
+                                    // Start the replication stream to the secondary range
+                                    match primary_range.start_replication(rm.clone()).await {
+                                        Ok(_) => (),
+                                        Err(e) => {
+                                            error!("Failed to start replication: {:?}", e);
+                                        }
+                                    }
                                 }
                             }
                         }

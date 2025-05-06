@@ -25,6 +25,14 @@ pub enum Error {
 }
 
 impl Error {
+    pub fn internal_error_from_string(msg: &str) -> Self {
+        Self::InternalError(Arc::<dyn std::error::Error + Send + Sync>::from(Box::<
+            dyn std::error::Error + Send + Sync,
+        >::from(
+            msg
+        )))
+    }
+
     pub fn from_storage_error(e: StorageError) -> Self {
         match e {
             StorageError::RangeDoesNotExist => Self::RangeDoesNotExist,
@@ -55,6 +63,8 @@ impl Error {
     }
 
     pub fn to_flatbuf_status(&self) -> Status {
+        println!("Error: {:?}", self);
+        println!("Error backtrace: {}", std::backtrace::Backtrace::capture());
         match self {
             Self::InvalidRequestFormat => Status::InvalidRequestFormat,
             Self::RangeDoesNotExist => Status::RangeDoesNotExist,

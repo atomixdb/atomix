@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::prefetching_buffer::PrefetchingBuffer;
 use crate::storage::RangeInfo;
 use crate::storage::Storage;
+use crate::wal;
 use crate::wal::Wal;
 use bytes::Bytes;
 use common::config::Config;
@@ -10,7 +11,9 @@ use common::full_range_id::FullRangeId;
 use common::transaction_info::TransactionInfo;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
 use proto::rangeserver::replicate_request;
+use proto::rangeserver::replicate_response;
 use proto::rangeserver::ReplicateDataRequest;
+use proto::rangeserver::ReplicateDataResponse;
 use proto::rangeserver::ReplicateRequest;
 use proto::rangeserver::ReplicateResponse;
 use std::collections::HashMap;
@@ -24,7 +27,10 @@ use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
+use tokio_stream::StreamExt;
 use tonic::async_trait;
+use tonic::IntoRequest;
+use tonic::IntoStreamingRequest;
 use tonic::Status as TStatus;
 use tonic::Streaming;
 use tracing::error;
@@ -55,10 +61,12 @@ where
     S: Storage,
     W: Wal,
 {
-    receiver: Streaming<ReplicateRequest>,
+    receiver: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
     sender: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
     wal: Arc<W>,
     storage: Arc<S>,
+    ack_send_frequency: u64,
+    last_acked_wal_offset: Option<u64>,
 }
 
 impl<S, W> ReplicationServer<S, W>
@@ -67,7 +75,7 @@ where
     W: Wal,
 {
     pub fn new(
-        receiver: Streaming<ReplicateRequest>,
+        receiver: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
         sender: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
         storage: Arc<S>,
         wal: Arc<W>,
@@ -77,6 +85,8 @@ where
             sender,
             storage,
             wal,
+            ack_send_frequency: 1,
+            last_acked_wal_offset: None,
         }
     }
 
@@ -93,12 +103,13 @@ where
 
     async fn serve_inner(&mut self) -> Result<(), ReplicationError> {
         // TODO: Maybe add a stop channel to stop the server gracefully.
+        let mut message_counter = 0;
         loop {
             // Get the next message from the stream.
-            let message = match self.receiver.message().await {
-                Ok(Some(msg)) => msg,
-                Ok(None) => return Err(ReplicationError::StreamDropped),
-                Err(e) => return Err(ReplicationError::InternalError(Arc::new(e))),
+            let message = match self.receiver.next().await {
+                Some(Ok(msg)) => msg,
+                None => return Err(ReplicationError::StreamDropped),
+                Some(Err(e)) => return Err(ReplicationError::InternalError(Arc::new(e))),
             };
             // Process the message.
             match message.request.unwrap() {
@@ -107,8 +118,23 @@ where
                 }
                 replicate_request::Request::Data(data) => {
                     // Persist to WAL
+                    let wal_offset = data.wal_offset;
                     self.wal.append_replicated_commit(data).await.unwrap();
+                    self.last_acked_wal_offset = Some(wal_offset);
                 }
+            }
+            message_counter += 1;
+            if message_counter % self.ack_send_frequency == 0 {
+                // Send an ack back to the client.
+                let response = ReplicateResponse {
+                    response: Some(replicate_response::Response::Data(ReplicateDataResponse {
+                        acked_wal_offset: self.last_acked_wal_offset.unwrap(),
+                    })),
+                };
+                self.sender
+                    .send(Ok(response))
+                    .await
+                    .map_err(|e| ReplicationError::InternalError(Arc::new(e)))?;
             }
         }
         Ok(())
@@ -209,17 +235,11 @@ where
     async fn get(&self, tx: Arc<TransactionInfo>, key: Bytes) -> Result<GetResult, Error> {
         todo!("implement stale reads");
     }
-    /// Append to the secondary commit log.
-    /// Will be applied later in a coordinated manner.
-    async fn commit_replicated(&self, commit: ReplicateDataRequest) -> Result<(), Error> {
-        self.wal.append_replicated_commit(commit).await.unwrap();
-        Ok(())
-    }
 
     /// Sets the replication stream for this range.
     async fn start_replication(
         &self,
-        recv_stream: Streaming<ReplicateRequest>,
+        recv_stream: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
         send_stream: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
     ) -> Result<(), ReplicationError> {
         // Is there a replication task already?
@@ -243,10 +263,10 @@ where
         // Create a new task to handle replication
         let storage_clone = self.storage.clone();
         let wal_clone = self.wal.clone();
-        *replication_task = Some(tokio::spawn(async move {
+        *replication_task = Some(self.bg_runtime.spawn(async move {
             let mut replication_server =
                 ReplicationServer::new(recv_stream, send_stream, storage_clone, wal_clone);
-            replication_server.serve();
+            let _ = replication_server.serve().await;
         }));
 
         Ok(())
@@ -400,6 +420,132 @@ where
             }
             // Sleep for a while before renewing the lease again.
             tokio::time::sleep(lease_renewal_interval).await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proto::rangeserver::{replicate_response, Record};
+    use tracing::info;
+
+    use crate::{
+        for_testing::{epoch_supplier::EpochSupplier, in_memory_wal::InMemoryWal},
+        storage::cassandra::{for_testing, Cassandra},
+    };
+
+    use super::*;
+    use std::sync::Arc;
+
+    fn init_tracing() {
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .try_init();
+    }
+
+    async fn init_secondary_rangemanager() -> Arc<SecondaryRangeManager<Cassandra, InMemoryWal>> {
+        let mock_wal = InMemoryWal::new();
+        let mock_epoch_supplier = Arc::new(EpochSupplier::new());
+        let mock_runtime = tokio::runtime::Handle::current();
+        let test_context = for_testing::init().await;
+
+        let mut config: Config = Default::default();
+        let protobuf_port = 50054;
+        config.range_server.proto_server_addr.port = protobuf_port;
+
+        info!("Creating secondary range manager");
+        let secondary_range_manager = SecondaryRangeManager::new(
+            FullRangeId {
+                keyspace_id: test_context.keyspace_id.clone(),
+                range_id: test_context.range_id.clone(),
+            },
+            config,
+            test_context.cassandra.clone(),
+            mock_epoch_supplier.clone(),
+            mock_wal,
+            mock_runtime,
+        );
+
+        info!("Loading secondary range manager");
+        let srm_copy = secondary_range_manager.clone();
+        let init_handle = tokio::spawn(async move { srm_copy.load().await.unwrap() });
+        // Give some delay so the RM can see the epoch advancing.
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        mock_epoch_supplier.set_epoch(1).await;
+        init_handle.await.unwrap();
+        return secondary_range_manager;
+    }
+
+    #[tokio::test]
+    async fn test_start_replication() {
+        init_tracing();
+        let secondary_range_manager = init_secondary_rangemanager().await;
+        // TODO: Create replication mapping
+
+        info!("Starting replication");
+        let (recv_stream_tx, recv_stream_rx) =
+            tokio::sync::mpsc::channel::<Result<ReplicateRequest, TStatus>>(8);
+        let (send_stream_tx, mut send_stream_rx) = tokio::sync::mpsc::channel(8);
+        let recv_stream = Box::pin(ReceiverStream::new(recv_stream_rx))
+            as Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>;
+        secondary_range_manager
+            .start_replication(recv_stream, send_stream_tx)
+            .await
+            .unwrap();
+
+        // Check that replication task is running
+        {
+            info!("Checking replication task status");
+            let replication_task = secondary_range_manager.replication_task.lock().await;
+            assert!(
+                replication_task.is_some(),
+                "Replication task should be running"
+            );
+        }
+
+        // Send some data
+        info!("Sending data to replication stream");
+        let wal_offset = 10;
+        let puts = vec![Record {
+            key: vec![1, 2, 3, 4],
+            value: vec![5, 6, 7, 8],
+        }];
+        let deletes = vec![
+            vec![9, 10, 11, 12], // Random key to delete
+        ];
+        let data_req = ReplicateRequest {
+            request: Some(replicate_request::Request::Data(ReplicateDataRequest {
+                deletes: deletes,
+                puts: puts,
+                has_reads: false,
+                transaction_id: uuid::Uuid::new_v4().to_string(),
+                wal_offset: wal_offset,
+            })),
+        };
+        recv_stream_tx.send(Ok(data_req)).await.unwrap();
+
+        // Get back the ack
+        info!("Waiting for response from replication stream");
+        let response = send_stream_rx.recv().await;
+        assert!(response.is_some(), "Response should be received");
+        match response {
+            Some(Ok(data_resp)) => {
+                // Response received successfully
+                if let Some(replicate_response::Response::Data(data_resp)) = data_resp.response {
+                    assert_eq!(
+                        data_resp.acked_wal_offset, 10,
+                        "Expected DataResponse with wal_offset {wal_offset}"
+                    );
+                } else {
+                    panic!("Expected DataResponse but got something else");
+                }
+            }
+            Some(Err(e)) => {
+                panic!("Unexpected error in replication response: {:?}", e);
+            }
+            None => {
+                panic!("No response received from replication stream");
+            }
         }
     }
 }

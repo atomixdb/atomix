@@ -182,7 +182,9 @@ impl<'a> Stream for AssignmentUpdateStream<'a> {
                         let update = self.assignment_computation.get_assignment_update(
                             &self.host_info,
                             version,
-                            !self.sent_full_update,
+                            // TODO(yanniszark): Change this back to !self.sent_full_update,
+                            // once incremental updates are implemented.
+                            true,
                         );
                         self.sent_full_update = true;
                         match update {

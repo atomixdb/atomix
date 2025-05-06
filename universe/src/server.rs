@@ -68,7 +68,11 @@ impl<S: Storage> Universe for UniverseServer<S> {
                     .iter()
                     .map(|kr| proto::universe::ZonedKeyRange {
                         zone: Some(zone.clone()),
-                        key_range: Some(kr.clone()),
+                        key_range: Some(proto::universe::KeyRange {
+                            base_range_uuid: Uuid::new_v4().to_string(),
+                            lower_bound_inclusive: kr.lower_bound_inclusive.clone(),
+                            upper_bound_exclusive: kr.upper_bound_exclusive.clone(),
+                        }),
                     })
             })
             .collect();

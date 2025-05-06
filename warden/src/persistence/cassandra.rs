@@ -19,6 +19,7 @@ struct CqlEpochRange {
 struct SerializedRangeAssignment {
     keyspace_id: Uuid,
     range_id: Uuid,
+    range_type: RangeType,
     key_lower_bound_inclusive: Option<Vec<u8>>,
     key_upper_bound_exclusive: Option<Vec<u8>>,
     assignee: String,
@@ -42,9 +43,13 @@ impl Cassandra {
 }
 
 static INSERT_INTO_RANGE_LEASE_QUERY: &str = r#"
-  INSERT INTO atomix.range_leases(range_id, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs)
-    VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO atomix.range_leases(range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     IF NOT EXISTS
+"#;
+
+static SELECT_RANGE_ASSIGNMENTS_QUERY: &str = r#"
+    SELECT keyspace_id, range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, assignee FROM atomix.range_map WHERE keyspace_id = ?
 "#;
 
 // TODO(purujit): To prevent writes from different Warden servers from clobbering each other,
@@ -52,8 +57,8 @@ static INSERT_INTO_RANGE_LEASE_QUERY: &str = r#"
 // we can then wrap this write into a Cassandra Lightweight Transaction that checks against
 // the lease's sequence number.
 static INSERT_OR_UPDATE_RANGE_ASSIGNMENT_QUERY: &str = r#"
-  INSERT INTO atomix.range_map(keyspace_id, range_id, key_lower_bound_inclusive, key_upper_bound_exclusive, assignee)
-  VALUES (?, ?, ?, ?, ?)
+  INSERT INTO atomix.range_map(keyspace_id, range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, assignee)
+  VALUES (?, ?, ?, ?, ?, ?)
   "#;
 
 #[async_trait::async_trait]
@@ -62,7 +67,39 @@ impl Persistence for Cassandra {
         &self,
         keyspace_id: &KeyspaceId,
     ) -> Result<Vec<RangeAssignment>, Error> {
-        todo!();
+        let rows = self
+            .session
+            .query(SELECT_RANGE_ASSIGNMENTS_QUERY, (keyspace_id.id,))
+            .await
+            .map_err(|op| Error::InternalError(Arc::new(op)))?;
+
+        let serialized_assignments = rows.rows_typed::<SerializedRangeAssignment>().unwrap();
+        let range_assignments = serialized_assignments
+            .into_iter()
+            .map(|assignment| {
+                let assignment = assignment.unwrap();
+                RangeAssignment {
+                    range: RangeInfo {
+                        keyspace_id: KeyspaceId {
+                            id: assignment.keyspace_id,
+                        },
+                        id: assignment.range_id,
+                        key_range: KeyRange {
+                            lower_bound_inclusive: assignment
+                                .key_lower_bound_inclusive
+                                .map(|b| b.into()),
+                            upper_bound_exclusive: assignment
+                                .key_upper_bound_exclusive
+                                .map(|b| b.into()),
+                        },
+                        range_type: assignment.range_type,
+                    },
+                    assignee: assignment.assignee,
+                }
+            })
+            .collect();
+
+        Ok(range_assignments)
     }
 
     async fn update_range_assignments(
@@ -80,6 +117,7 @@ impl Persistence for Cassandra {
             let assignment = SerializedRangeAssignment {
                 keyspace_id: assignment.range.keyspace_id.id,
                 range_id: assignment.range.id,
+                range_type: assignment.range.range_type,
                 key_lower_bound_inclusive: assignment
                     .range
                     .key_range
@@ -116,12 +154,12 @@ impl Persistence for Cassandra {
                             .key_range
                             .lower_bound_inclusive
                             .clone()
-                            .map_or(vec![], |v| v.to_vec()),
+                            .map(|v| v.to_vec()),
                         range
                             .key_range
                             .upper_bound_exclusive
                             .clone()
-                            .map_or(vec![], |v| v.to_vec()),
+                            .map(|v| v.to_vec()),
                         0 as i64,
                         CqlEpochRange {
                             lower_bound_inclusive: 0,

@@ -40,15 +40,15 @@ message ReplicateInitResponse {
 }
 
 message ReplicateDataRequest {
-    bytes transaction_id = 1;
-    RangeId range = 2;
+    string transaction_id = 1;
+    bool has_reads = 2;
     repeated Record puts = 3;
     repeated bytes deletes = 4;
+    uint64 wal_offset = 5;
 }
 
 message ReplicateDataResponse {
-    RangeId range = 1;
-    bytes latest_persisted_transaction_id = 2;
+    uint64 acked_wal_offset = 1;
 }
 
 message ReplicateRequest {

@@ -1,9 +1,3 @@
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-    sync::Arc,
-};
-
 use bytes::Bytes;
 use common::{
     constants, full_range_id::FullRangeId, keyspace::Keyspace, keyspace_id::KeyspaceId,
@@ -15,6 +9,11 @@ use proto::universe::universe_client::UniverseClient;
 use proto::universe::{
     get_keyspace_info_request::KeyspaceInfoSearchField, GetKeyspaceInfoRequest,
     Keyspace as ProtoKeyspace,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+    sync::Arc,
 };
 use tokio::task::JoinSet;
 use uuid::Uuid;
@@ -86,7 +85,6 @@ impl Transaction {
             .into_inner()
             .keyspace_info
             .ok_or(Error::KeyspaceDoesNotExist)?;
-
         let keyspace_id = KeyspaceId::from_str(&keyspace_info.keyspace_id).unwrap();
         self.resolved_keyspaces
             .insert(keyspace.clone(), keyspace_id);
@@ -238,9 +236,12 @@ impl Transaction {
         self.record_abort().await
     }
 
-    fn error_from_rangeclient_error(_err: rangeclient::client::Error) -> Error {
+    fn error_from_rangeclient_error(err: rangeclient::client::Error) -> Error {
         // TODO(tamer): handle
-        panic!("encountered rangeclient error, translation not yet implemented.")
+        panic!(
+            "encountered rangeclient error, translation not yet implemented. Error: {:?}",
+            err
+        )
     }
 
     pub async fn commit(&mut self) -> Result<(), Error> {

@@ -1,27 +1,33 @@
+use super::replication_client::ReplicationClientHandle;
 use super::{GetResult, LoadableRange, PrepareResult, RangeManager as Trait};
-
+use crate::error::Error;
 use crate::{
-    epoch_supplier::EpochSupplier, error::Error, key_version::KeyVersion,
-    range_manager::lock_table, storage::RangeInfo, storage::Storage,
-    transaction_abort_reason::TransactionAbortReason, wal::Wal,
+    epoch_supplier::EpochSupplier, key_version::KeyVersion, range_manager::lock_table,
+    storage::RangeInfo, storage::Storage, transaction_abort_reason::TransactionAbortReason,
+    wal::Wal,
 };
 use bytes::Bytes;
-use common::config::Config;
+use common::config::{Config, HostPort};
 use common::full_range_id::FullRangeId;
+use common::replication_mapping::ReplicationMapping;
 use common::transaction_info::TransactionInfo;
 
+use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::prefetching_buffer::KeyState;
 use crate::prefetching_buffer::PrefetchingBuffer;
+use crate::range_manager::replication_client::ReplicationClient;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tonic::async_trait;
+use tracing::debug;
 
 struct LoadedState {
     range_info: RangeInfo,
@@ -29,6 +35,7 @@ struct LoadedState {
     lock_table: lock_table::LockTable,
     // TODO: need more efficient representation of prepares than raw bytes.
     pending_prepare_records: Mutex<HashMap<Uuid, Bytes>>,
+    replication_handles: Mutex<HashMap<Uuid, ReplicationClientHandle>>,
 }
 
 enum State {
@@ -108,7 +115,7 @@ where
         match load_result {
             Err(e) => {
                 *state = State::Unloaded;
-                sender.send(Err(e.clone())).unwrap();
+                let _ = sender.send(Err(e.clone())); // Ignore send errors
                 Err(e)
             }
             Ok(loaded_state) => {
@@ -178,6 +185,8 @@ where
             State::NotLoaded | State::Unloaded | State::Loading(_) => Err(Error::RangeIsNotLoaded),
             State::Loaded(state) => {
                 if !state.range_info.key_range.includes(key.clone()) {
+                    println!("Key {:?} is outside range {:?}", key, state.range_info,);
+
                     return Err(Error::KeyIsOutOfRange);
                 };
                 self.acquire_range_lock(state, tx.clone()).await?;
@@ -329,11 +338,13 @@ where
                 let prepare_record_bytes = {
                     let mut pending_prepare_records = state.pending_prepare_records.lock().await;
                     // TODO: handle prior removals.
+                    // TODO: Add the prepare record to the secondary replication queues
                     pending_prepare_records.remove(&tx.id).unwrap().clone()
                 };
 
+                let prepare_record_bytes_vec = prepare_record_bytes.to_vec();
                 let prepare_record =
-                    flatbuffers::root::<PrepareRequest>(&prepare_record_bytes).unwrap();
+                    flatbuffers::root::<PrepareRequest>(&prepare_record_bytes_vec).unwrap();
                 let version = KeyVersion {
                     epoch: commit.epoch(),
                     // TODO: version counter should be an internal counter per range.
@@ -377,6 +388,18 @@ where
                     }
                 }
 
+                // TODO(yanniszark): Make sure this can't block. Also insert the
+                // correct wal_offset, it's not returned right now.
+                // Queue update for the secondaries if they exist
+                {
+                    let replication_handles = state.replication_handles.lock().await;
+                    for handle in replication_handles.values() {
+                        if let Err(e) = handle.queue_update(0, &prepare_record).await {
+                            error!("Failed to queue update for secondary: {:?}", e);
+                        }
+                    }
+                }
+
                 // We apply the writes to storage before releasing the lock since we send all
                 // gets to storage directly. We should implement a memtable to allow us to release
                 // the lock sooner.
@@ -385,6 +408,40 @@ where
                 self.prefetching_buffer
                     .process_transaction_complete(tx.id)
                     .await;
+                Ok(())
+            }
+        }
+    }
+
+    async fn start_replication(
+        &self,
+        replication_mapping: ReplicationMapping,
+    ) -> Result<(), Error> {
+        let s = self.state.read().await;
+        match s.deref() {
+            State::NotLoaded | State::Unloaded | State::Loading(_) => {
+                return Err(Error::RangeIsNotLoaded)
+            }
+            State::Loaded(state) => {
+                // Is there a client already for this replication mapping?
+                let mut replication_handles = state.replication_handles.lock().await;
+                if replication_handles.contains_key(&replication_mapping.secondary_range.range_id) {
+                    return Ok(());
+                }
+
+                // Create a new replication client
+                let secondary_address = HostPort {
+                    host: replication_mapping.assignee.clone(),
+                    port: self.config.range_server.proto_server_addr.port,
+                };
+                let (mut replication_client, handle) =
+                    ReplicationClient::new(secondary_address, replication_mapping.secondary_range);
+                replication_handles.insert(replication_mapping.secondary_range.range_id, handle);
+
+                // Start the replication task
+                self.bg_runtime.spawn(async move {
+                    let _ = replication_client.serve();
+                });
                 Ok(())
             }
         }
@@ -425,6 +482,15 @@ where
         let bg_runtime = self.bg_runtime.clone();
         let state = self.state.clone();
         let lease_renewal_interval = self.config.range_server.range_maintenance_duration;
+        let epoch_duration = self.config.epoch.epoch_duration;
+        // TODO(yanniszark): Put this in the config.
+        let intended_lease_duration = Duration::from_secs(2);
+        let num_epochs_per_lease = intended_lease_duration
+            .as_nanos()
+            .checked_div(epoch_duration.as_nanos())
+            .and_then(|n| u64::try_from(n).ok())
+            .unwrap();
+
         self.bg_runtime
             .spawn(async move {
                 // TODO: handle all errors instead of panicking.
@@ -436,6 +502,16 @@ where
                     .take_ownership_and_load_range(range_id)
                     .await
                     .map_err(Error::from_storage_error)?;
+                debug!("Loaded range: {:?}", range_info.id);
+
+                debug!("First epoch read: {}", epoch);
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                let epoch = epoch_supplier
+                    .read_epoch()
+                    .await
+                    .map_err(Error::from_epoch_supplier_error)?;
+                debug!("Second epoch read: {}", epoch);
+
                 // Epoch read from the provider can be 1 less than the true epoch. The highest known epoch
                 // of a range cannot move backward even across range load/unloads, so to maintain that guarantee
                 // we just wait for the epoch to advance once.
@@ -443,11 +519,14 @@ where
                     .wait_until_epoch(epoch + 1, chrono::Duration::seconds(10))
                     .await
                     .map_err(Error::from_epoch_supplier_error)?;
+                debug!("Epoch updated for range: {:?}", range_info.id);
                 // Get a new epoch lease.
+                // Calculate how many epochs we need for a ~10 second lease
                 let highest_known_epoch = epoch + 1;
                 let new_epoch_lease_lower_bound =
                     std::cmp::max(highest_known_epoch, range_info.epoch_lease.1 + 1);
-                let new_epoch_lease_upper_bound = new_epoch_lease_lower_bound + 100;
+                let new_epoch_lease_upper_bound =
+                    new_epoch_lease_lower_bound + num_epochs_per_lease;
                 storage
                     .renew_epoch_lease(
                         range_id,
@@ -475,6 +554,7 @@ where
                     highest_known_epoch: HighestKnownEpoch::new(highest_known_epoch),
                     lock_table: lock_table::LockTable::new(),
                     pending_prepare_records: Mutex::new(HashMap::new()),
+                    replication_handles: Mutex::new(HashMap::new()),
                 })
             })
             .await

@@ -11,7 +11,7 @@ use std::{
 };
 
 /// Represents a host and port combination.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub struct HostPort {
     /// The hostname or IP address.
     pub host: String,
@@ -80,13 +80,13 @@ impl<'de> Deserialize<'de> for HostPort {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct EpochConfig {
     pub proto_server_addr: HostPort,
     pub epoch_duration: std::time::Duration,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct CassandraConfig {
     // Can't be SocketAddr because we want to use a DNS name.
     pub cql_addr: HostPort,
@@ -108,32 +108,32 @@ pub struct EpochPublisherSet {
     pub publishers: HashSet<EpochPublisher>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct RangeServerConfig {
     pub range_maintenance_duration: time::Duration,
     pub proto_server_addr: HostPort,
     pub fast_network_addr: HostPort,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct RegionConfig {
     pub warden_address: HostPort,
     pub epoch_publishers: HashSet<EpochPublisherSet>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct UniverseConfig {
     pub proto_server_addr: HostPort,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct FrontendConfig {
     pub proto_server_addr: HostPort,
     pub fast_network_addr: HostPort,
     pub transaction_overall_timeout: std::time::Duration,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Config {
     pub range_server: RangeServerConfig,
     pub epoch: EpochConfig,

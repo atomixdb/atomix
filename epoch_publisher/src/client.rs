@@ -74,7 +74,7 @@ impl EpochPublisherClient {
         let req_id = Uuid::new_v4();
         trace!(
             "issuing read_epoch rpc. Epoch Publisher: {:#?}. req_id: {}",
-            self.publisher_host_info.identity,
+            self.publisher_host_info,
             req_id
         );
 
@@ -115,6 +115,7 @@ impl EpochPublisherClient {
                     flatbuffers::root::<ReadEpochResponse>(envelope.bytes().unwrap().bytes())
                         .unwrap();
                 let () = Error::from_flatbuf_status(response_msg.status())?;
+                trace!("Read epoch: {}", response_msg.epoch());
                 return Ok(response_msg.epoch());
             }
             _ => return Err(Error::InvalidResponseFormat),
