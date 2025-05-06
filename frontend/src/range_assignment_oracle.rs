@@ -6,12 +6,16 @@ use common::membership::range_assignment_oracle::RangeAssignmentOracle as RangeA
 use common::{
     full_range_id::FullRangeId,
     host_info::{HostIdentity, HostInfo},
+    key_range::KeyRange,
     keyspace_id::KeyspaceId,
     region::{Region, Zone},
 };
 
 use proto::universe::universe_client::UniverseClient;
-use proto::universe::{get_keyspace_info_request::KeyspaceInfoSearchField, GetKeyspaceInfoRequest};
+use proto::universe::{
+    get_keyspace_info_request::KeyspaceInfoSearchField, GetKeyspaceInfoRequest,
+    KeyRange as ProtoKeyRange,
+};
 // TODO: Dumb little Oracle -- redesign it
 
 pub struct RangeAssignmentOracle {
@@ -21,6 +25,23 @@ pub struct RangeAssignmentOracle {
 impl RangeAssignmentOracle {
     pub fn new(universe_client: UniverseClient<tonic::transport::Channel>) -> Self {
         RangeAssignmentOracle { universe_client }
+    }
+
+    fn proto_key_range_includes(&self, key_range: &ProtoKeyRange, key: Bytes) -> bool {
+        let key_range = KeyRange {
+            lower_bound_inclusive: if key_range.lower_bound_inclusive.is_empty() {
+                None
+            } else {
+                Some(Bytes::from(key_range.lower_bound_inclusive.clone()))
+            },
+            upper_bound_exclusive: if key_range.upper_bound_exclusive.is_empty() {
+                None
+            } else {
+                Some(Bytes::from(key_range.upper_bound_exclusive.clone()))
+            },
+        };
+        let res = key_range.includes(key);
+        res
     }
 }
 
@@ -51,7 +72,7 @@ impl RangeAssignmentOracleTrait for RangeAssignmentOracle {
         let keyspace_info = keyspace_info_response.into_inner().keyspace_info.unwrap();
 
         for range in keyspace_info.base_key_ranges {
-            if range.lower_bound_inclusive <= key && key < range.upper_bound_exclusive {
+            if self.proto_key_range_includes(&range, key.clone()) {
                 return Some(FullRangeId {
                     keyspace_id,
                     range_id: Uuid::parse_str(&range.base_range_uuid).unwrap(),
