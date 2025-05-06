@@ -235,6 +235,21 @@ where
         tx_table.insert(id, tx_info);
     }
 
+    async fn get_or_create_transaction_info(&self, id: Uuid) -> Arc<TransactionInfo> {
+        let mut tx_table = self.transaction_table.write().await;
+        if let Some(tx) = (*tx_table).get(&id) {
+            return tx.clone();
+        }
+        let overall_timeout = core::time::Duration::from_secs(10);
+        let tx_info = Arc::new(TransactionInfo {
+            id,
+            started: chrono::Utc::now(),
+            overall_timeout,
+        });
+        tx_table.insert(id, tx_info.clone());
+        tx_info
+    }
+
     async fn get_transaction_info(&self, id: Uuid) -> Result<Arc<TransactionInfo>, Error> {
         let tx_table = self.transaction_table.read().await;
         match (*tx_table).get(&id) {
@@ -530,7 +545,7 @@ where
             Some(id) => util::flatbuf::deserialize_uuid(id),
         };
         let rm = self.maybe_load_and_get_primary_range(&range_id).await?;
-        let tx = self.get_transaction_info(transaction_id).await?;
+        let tx = self.get_or_create_transaction_info(transaction_id).await;
         rm.prepare(tx.clone(), request).await
     }
 
