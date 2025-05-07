@@ -17,7 +17,7 @@ pub enum Error {
     Internal(Arc<dyn std::error::Error + Send + Sync>),
 }
 
-pub trait Iterator<'a> {
+pub trait Iterator {
     fn next(&mut self) -> impl std::future::Future<Output = Option<LogEntry<'_>>> + Send;
     fn next_offset(&self) -> impl std::future::Future<Output = Result<u64, Error>> + Send;
 }
@@ -40,5 +40,5 @@ pub trait Wal: Send + Sync + 'static {
     async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<(), Error>;
     async fn trim_before_offset(&self, offset: u64) -> Result<(), Error>;
 
-    fn iterator(&self) -> impl Iterator + Send;
+    fn iterator(self: &Arc<Self>, start_after_offset: Option<u64>) -> impl Iterator + Send;
 }

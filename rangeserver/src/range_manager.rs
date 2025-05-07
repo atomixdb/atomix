@@ -1,5 +1,6 @@
 pub mod r#impl;
 mod lock_table;
+mod log_applicator;
 mod replication_client;
 pub mod r#secondary;
 

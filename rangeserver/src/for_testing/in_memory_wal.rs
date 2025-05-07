@@ -1,6 +1,6 @@
 use crate::wal::*;
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 
 use async_trait::async_trait;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
@@ -8,6 +8,7 @@ use flatbuffers::FlatBufferBuilder;
 use prost::Message;
 use proto::rangeserver::ReplicateDataRequest;
 use tokio::sync::Mutex;
+use tracing::info;
 
 pub struct InMemoryWal {
     state: Mutex<State>,
@@ -29,13 +30,13 @@ impl State {
     }
 }
 
-pub struct InMemIterator<'a> {
+pub struct InMemIterator {
     index: u64,
-    wal: &'a InMemoryWal,
+    wal: Arc<InMemoryWal>,
     current_entry: Option<Vec<u8>>,
 }
 
-impl<'a> Iterator<'a> for InMemIterator<'a> {
+impl Iterator for InMemIterator {
     async fn next(&mut self) -> Option<LogEntry<'_>> {
         let wal = self.wal.state.lock().await;
         let ind = (wal.first_offset.unwrap_or(0) + self.index) as usize;
@@ -53,7 +54,7 @@ impl<'a> Iterator<'a> for InMemIterator<'a> {
     async fn next_offset(&self) -> Result<u64, Error> {
         let wal = self.wal.state.lock().await;
         match wal.first_offset {
-            None => Ok(0),
+            None => Ok(self.index),
             Some(first_offset) => {
                 let offset = first_offset + self.index;
                 Ok(offset)
@@ -163,10 +164,14 @@ impl Wal for InMemoryWal {
         Ok(())
     }
 
-    fn iterator(&self) -> InMemIterator {
+    fn iterator(self: &Arc<Self>, start_after_offset: Option<u64>) -> InMemIterator {
+        let index: u64 = match start_after_offset {
+            Some(offset) => offset + 1,
+            None => 0,
+        };
         InMemIterator {
-            index: 0,
-            wal: self,
+            index,
+            wal: self.clone(),
             current_entry: None,
         }
     }

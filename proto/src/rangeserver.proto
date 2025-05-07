@@ -44,7 +44,8 @@ message ReplicateDataRequest {
     bool has_reads = 2;
     repeated Record puts = 3;
     repeated bytes deletes = 4;
-    uint64 wal_offset = 5;
+    uint64 primary_wal_offset = 5;
+    uint64 epoch = 6;
 }
 
 message ReplicateDataResponse {

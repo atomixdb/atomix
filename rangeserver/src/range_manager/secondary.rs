@@ -1,47 +1,34 @@
 use crate::epoch_supplier::EpochSupplier;
 use crate::error::Error;
-use crate::prefetching_buffer::PrefetchingBuffer;
 use crate::storage::RangeInfo;
 use crate::storage::Storage;
-use crate::wal;
 use crate::wal::Wal;
 use bytes::Bytes;
 use common::config::Config;
 use common::full_range_id::FullRangeId;
 use common::transaction_info::TransactionInfo;
-use flatbuf::rangeserver_flatbuffers::range_server::*;
-use proto::rangeserver::replicate_request;
-use proto::rangeserver::replicate_response;
-use proto::rangeserver::ReplicateDataRequest;
-use proto::rangeserver::ReplicateDataResponse;
-use proto::rangeserver::ReplicateRequest;
-use proto::rangeserver::ReplicateResponse;
-use std::collections::HashMap;
+use proto::rangeserver::{
+    replicate_request, replicate_response, ReplicateDataResponse, ReplicateRequest,
+    ReplicateResponse,
+};
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::pin::Pin;
 use std::sync::Arc;
 use thiserror::Error;
-use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
 use tokio_stream::StreamExt;
 use tonic::async_trait;
-use tonic::IntoRequest;
-use tonic::IntoStreamingRequest;
 use tonic::Status as TStatus;
-use tonic::Streaming;
 use tracing::error;
-use uuid::Uuid;
 
+use super::log_applicator::LogApplicator;
+use super::log_applicator::LogApplicatorHandle;
 use super::GetResult;
 use super::LoadableRange;
-use super::PrepareResult;
-use super::{
-    RangeManager as RangeManagerTrait, SecondaryRangeManager as SecondaryRangeManagerTrait,
-};
+use super::SecondaryRangeManager as SecondaryRangeManagerTrait;
 
 struct LoadedState {
     range_info: RangeInfo,
@@ -63,6 +50,7 @@ where
 {
     receiver: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
     sender: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
+    log_applicator: LogApplicatorHandle,
     wal: Arc<W>,
     storage: Arc<S>,
     ack_send_frequency: u64,
@@ -75,22 +63,34 @@ where
     W: Wal,
 {
     pub fn new(
+        range_id: FullRangeId,
         receiver: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
         sender: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
         storage: Arc<S>,
         wal: Arc<W>,
+        runtime: tokio::runtime::Handle,
     ) -> Self {
+        let (mut log_applicator, log_applicator_handle) =
+            LogApplicator::<S, W>::new(range_id, wal.clone(), storage.clone());
+
+        runtime.spawn(async move {
+            log_applicator.apply_loop().await;
+        });
+
         Self {
             receiver,
             sender,
-            storage,
+            log_applicator: log_applicator_handle,
             wal,
+            storage,
             ack_send_frequency: 1,
             last_acked_wal_offset: None,
         }
     }
 
-    async fn serve(&mut self) -> Result<(), ReplicationError> {
+    pub async fn serve(&mut self) -> Result<(), ReplicationError> {
+        // TODO(yanniszark): Set the desired applied epoch dynamically.
+        self.log_applicator.set_desired_applied_epoch(0);
         let result = self.serve_inner().await;
         match result {
             Ok(()) => Ok(()),
@@ -118,7 +118,7 @@ where
                 }
                 replicate_request::Request::Data(data) => {
                     // Persist to WAL
-                    let wal_offset = data.wal_offset;
+                    let wal_offset = data.primary_wal_offset;
                     self.wal.append_replicated_commit(data).await.unwrap();
                     self.last_acked_wal_offset = Some(wal_offset);
                 }
@@ -263,9 +263,17 @@ where
         // Create a new task to handle replication
         let storage_clone = self.storage.clone();
         let wal_clone = self.wal.clone();
+        let range_id = self.range_id;
+        let bg_runtime = self.bg_runtime.clone();
         *replication_task = Some(self.bg_runtime.spawn(async move {
-            let mut replication_server =
-                ReplicationServer::new(recv_stream, send_stream, storage_clone, wal_clone);
+            let mut replication_server = ReplicationServer::new(
+                range_id,
+                recv_stream,
+                send_stream,
+                storage_clone,
+                wal_clone,
+                bg_runtime,
+            );
             let _ = replication_server.serve().await;
         }));
 
@@ -426,7 +434,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use proto::rangeserver::{replicate_response, Record};
+    use proto::rangeserver::{replicate_response, Record, ReplicateDataRequest};
+    use tokio_stream::wrappers::ReceiverStream;
     use tracing::info;
 
     use crate::{
@@ -519,7 +528,8 @@ mod tests {
                 puts: puts,
                 has_reads: false,
                 transaction_id: uuid::Uuid::new_v4().to_string(),
-                wal_offset: wal_offset,
+                primary_wal_offset: wal_offset,
+                epoch: 1,
             })),
         };
         recv_stream_tx.send(Ok(data_req)).await.unwrap();

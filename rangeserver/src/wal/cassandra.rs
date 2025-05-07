@@ -258,7 +258,7 @@ impl Wal for CassandraWal {
             .await
     }
 
-    fn iterator(&self) -> InMemIterator {
+    fn iterator(self: &Arc<Self>, start_after_offset: Option<u64>) -> InMemIterator {
         todo!()
     }
 }
