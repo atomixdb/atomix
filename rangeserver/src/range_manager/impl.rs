@@ -395,7 +395,7 @@ where
                     let replication_handles = state.replication_handles.lock().await;
                     for handle in replication_handles.values() {
                         if let Err(e) = handle.queue_update(0, &prepare_record).await {
-                            error!("Failed to queue update for secondary: {:?}", e);
+                            error!("Failed to queue update for secondary: {:#?}", e);
                         }
                     }
                 }
@@ -440,7 +440,11 @@ where
 
                 // Start the replication task
                 self.bg_runtime.spawn(async move {
-                    let _ = replication_client.serve();
+                    info!(
+                        "Starting replication task for range: {:?}",
+                        replication_mapping.secondary_range.range_id
+                    );
+                    let _ = replication_client.serve().await;
                 });
                 Ok(())
             }
@@ -503,14 +507,6 @@ where
                     .await
                     .map_err(Error::from_storage_error)?;
                 debug!("Loaded range: {:?}", range_info.id);
-
-                debug!("First epoch read: {}", epoch);
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                let epoch = epoch_supplier
-                    .read_epoch()
-                    .await
-                    .map_err(Error::from_epoch_supplier_error)?;
-                debug!("Second epoch read: {}", epoch);
 
                 // Epoch read from the provider can be 1 less than the true epoch. The highest known epoch
                 // of a range cannot move backward even across range load/unloads, so to maintain that guarantee

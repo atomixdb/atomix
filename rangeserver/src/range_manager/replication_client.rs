@@ -13,7 +13,7 @@ use proto::rangeserver::ReplicateResponse;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Channel;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::error::Error;
 
@@ -71,12 +71,33 @@ impl ReplicationClientHandle {
             has_reads: prepare.has_reads(),
             puts,
             transaction_id,
-            wal_offset,
+            primary_wal_offset: wal_offset,
+            epoch: 0,
         };
-        self.update_send
-            .send(data)
-            .await
-            .map_err(|e| Error::InternalError(Arc::new(e)))?;
+
+        info!(
+            "Attempting to send update with wal_offset {} to replication client",
+            wal_offset
+        );
+
+        // Get current state to include in error logging
+        let state = self.state.read().await;
+        let state_str = match *state {
+            State::NotStarted => "NotStarted",
+            State::Running(_) => "Running",
+            State::Stopped => "Stopped",
+        };
+        drop(state);
+
+        self.update_send.send(data).await.map_err(|e| {
+            error!(
+                "Failed to send update to replication client (current state: {}): {:#?}",
+                state_str, e
+            );
+            Error::InternalError(Arc::new(e))
+        })?;
+
+        info!("Successfully queued update with wal_offset {}", wal_offset);
         Ok(())
     }
 }
@@ -104,12 +125,24 @@ impl ReplicationClient {
 
     /// Serves the replication stream, sending updates to the secondary range.
     pub async fn serve(&mut self) -> Result<(), Error> {
+        info!(
+            "Starting replication client for primary range {} to secondary range {}",
+            self.secondary_range_id.range_id, self.secondary_range_id.range_id
+        );
         let rs_client = RangeServerClient::connect(format!(
             "http://{}:{}",
             self.secondary_address.host, self.secondary_address.port
         ))
         .await
-        .map_err(|e| Error::InternalError(Arc::new(e)))?;
+        .map_err(|e| {
+            error!(
+                "Failed to connect to secondary range server at {}:{}: {:#?}",
+                self.secondary_address.host, self.secondary_address.port, e
+            );
+            Error::InternalError(Arc::new(e))
+        })?;
+
+        info!("Successfully connected to secondary range server");
 
         {
             let mut state = self.state.write().await;
@@ -123,7 +156,10 @@ impl ReplicationClient {
             *state = State::Stopped;
         }
         match result {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                info!("Replication client stopped gracefully");
+                Ok(())
+            }
             Err(e) => {
                 error!(
                     "Replication client failed for keyspace_id {} and range_id {}: {:?}",
@@ -139,17 +175,12 @@ impl ReplicationClient {
         &mut self,
         mut rs_client: RangeServerClient<Channel>,
     ) -> Result<(), Error> {
+        info!("Starting replication client inner loop");
         // Find where the replication should start from (should the secondary send that?)
         // First send the init request
         // TODO(yanniszark): Make channel size configurable
         let (tx, rx) = tokio::sync::mpsc::channel(8);
         let send_stream = tx;
-        let mut recv_stream = rs_client
-            .replicate(tokio_stream::wrappers::ReceiverStream::new(rx))
-            .await
-            .map_err(|e| Error::InternalError(Arc::new(e)))?
-            .into_inner();
-
         // Send init request
         let init_req = ReplicateRequest {
             request: Some(replicate_request::Request::Init(ReplicateInitRequest {
@@ -159,10 +190,19 @@ impl ReplicationClient {
                 }),
             })),
         };
+        // Put the init request in the channel before creating the receive
+        // stream. Otherwise, the server will not be able to send the init
+        // response.
         send_stream
             .send(init_req)
             .await
             .map_err(|e| Error::InternalError(Arc::new(e)))?;
+
+        let mut recv_stream = rs_client
+            .replicate(tokio_stream::wrappers::ReceiverStream::new(rx))
+            .await
+            .map_err(|e| Error::InternalError(Arc::new(e)))?
+            .into_inner();
 
         // Verify init response
         match recv_stream.message().await {
@@ -190,15 +230,18 @@ impl ReplicationClient {
         };
 
         // Start sending data.
+        info!("Starting data sending loop");
         loop {
             tokio::select! {
                 // Replicate the next prepare request
                 update = self.update_recv.recv() => {
+                    info!("Sending update to secondary range");
                     Self::process_data(&send_stream, update).await?;
                 }
 
                 // Process messages from the server
                 msg = recv_stream.message() => {
+                    info!("Processing response from secondary range");
                     self.process_response(msg).await?;
                 }
             }

@@ -64,6 +64,8 @@ async fn simple_e2e() {
     //     .unwrap();
     // let keyspace_id = response.get_ref().keyspace_id.clone();
     // info!("Created keyspace with ID: {:?}", keyspace_id);
+    // // Sleep a bit so ranges can be assigned
+    // tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     let keyspace_info_request = GetKeyspaceInfoRequest {
         keyspace_info_search_field: Some(KeyspaceInfoSearchField::Keyspace(ProtoKeyspace {
@@ -118,7 +120,7 @@ async fn simple_e2e() {
                 namespace: keyspace.namespace.clone(),
                 name: keyspace.name.clone(),
             }),
-            key: Bytes::from_static(&[6]).to_vec(),
+            key: Bytes::from_static(&[5]).to_vec(),
         })
         .await
         .unwrap();

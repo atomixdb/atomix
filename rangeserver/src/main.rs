@@ -30,7 +30,7 @@ struct Args {
     #[arg(long, default_value = "a")]
     zone: String,
 
-    #[arg(long, default_value = "test_server")]
+    #[arg(long, default_value = "127.0.0.1")]
     identity: String,
 
     #[arg(long, default_value = "127.0.0.1:50054")]

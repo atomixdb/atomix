@@ -113,11 +113,15 @@ where
         &self,
         request: Request<tonic::Streaming<ReplicateRequest>>,
     ) -> Result<Response<Self::ReplicateStream>, TStatus> {
+        // TODO(yanniszark): This does NOT work. The bidirectional connection is
+        // only established AFTER this function returns.
+        info!("Received a replicate request");
         let mut stream = request.into_inner();
         let first_message = stream.message().await.map_err(|e| {
             TStatus::internal(format!("Failed to get first message from stream: {:?}", e))
         })?;
 
+        info!("Got first message from stream");
         let first_message = match first_message {
             Some(msg) => msg,
             None => return Err(TStatus::invalid_argument("Empty stream received")),
@@ -773,6 +777,7 @@ where
                                         }
                                     };
                                     // Start the replication stream to the secondary range
+                                    info!("Starting replication for range {:?} to {:?}", rm.primary_range, rm.secondary_range);
                                     match primary_range.start_replication(rm.clone()).await {
                                         Ok(_) => (),
                                         Err(e) => {
