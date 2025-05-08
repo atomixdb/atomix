@@ -115,12 +115,12 @@ impl Persistence for Cassandra {
                             .key_range
                             .lower_bound_inclusive
                             .clone()
-                            .map_or(vec![], |v| v.to_vec()),
+                            .map(|v| v.to_vec()),
                         range
                             .key_range
                             .upper_bound_exclusive
                             .clone()
-                            .map_or(vec![], |v| v.to_vec()),
+                            .map(|v| v.to_vec()),
                         0 as i64,
                         CqlEpochRange {
                             lower_bound_inclusive: 0,
@@ -138,5 +138,53 @@ impl Persistence for Cassandra {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::keyspace_id::KeyspaceId;
+    use rangeserver::storage::{cassandra::Cassandra as RangeServerCassandra, Storage};
+
+    #[tokio::test]
+    async fn test_insert_range_with_none_bounds() {
+        // TODO(yanniszark): This feels like more of an integration test,
+        // should we move it elsewhere?
+        let persistence = Cassandra::new("127.0.0.1:9042".to_string()).await;
+        let rangeserver_persistence = RangeServerCassandra::new("127.0.0.1:9042".to_string()).await;
+
+        let range = RangeInfo {
+            keyspace_id: KeyspaceId::new(Uuid::new_v4()),
+            id: Uuid::new_v4(),
+            key_range: KeyRange {
+                lower_bound_inclusive: None,
+                upper_bound_exclusive: None,
+            },
+        };
+
+        persistence
+            .insert_new_ranges(&vec![range.clone()])
+            .await
+            .unwrap();
+
+        // Query back the inserted range to verify serialization
+        let lease = rangeserver_persistence
+            .take_ownership_and_load_range(FullRangeId {
+                keyspace_id: range.keyspace_id,
+                range_id: range.id,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(lease.id, range.id);
+        assert_eq!(
+            lease.key_range.lower_bound_inclusive,
+            range.key_range.lower_bound_inclusive
+        );
+        assert_eq!(
+            lease.key_range.upper_bound_exclusive,
+            range.key_range.upper_bound_exclusive
+        );
     }
 }
