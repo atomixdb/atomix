@@ -8,56 +8,103 @@ use common::{
     host_info::{HostIdentity, HostInfo},
     key_range::KeyRange,
     keyspace_id::KeyspaceId,
+    keyspace::Keyspace,
     region::{Region, Zone},
 };
-
 use proto::universe::universe_client::UniverseClient;
-use proto::universe::{get_keyspace_info_request::KeyspaceInfoSearchField, GetKeyspaceInfoRequest};
+use proto::universe::{
+    get_keyspace_info_request::KeyspaceInfoSearchField, GetKeyspaceInfoRequest,
+    Keyspace as ProtoKeyspace, KeyspaceInfo,
+};
+use std::{collections::HashMap, str::FromStr};
+use tokio::sync::RwLock;
+
 // TODO: Dumb little Oracle -- redesign it
 
 pub struct RangeAssignmentOracle {
     universe_client: UniverseClient<tonic::transport::Channel>,
+    // Using a couple of caches to avoid making too many requests to the universe client
+    key_to_full_range_id: RwLock<HashMap<String, FullRangeId>>,
+    keyspace_to_keyspace_info: RwLock<HashMap<String, KeyspaceInfo>>,
 }
 
 impl RangeAssignmentOracle {
     pub fn new(universe_client: UniverseClient<tonic::transport::Channel>) -> Self {
-        RangeAssignmentOracle { universe_client }
+        RangeAssignmentOracle {
+            universe_client,
+            key_to_full_range_id: RwLock::new(HashMap::new()),
+            keyspace_to_keyspace_info: RwLock::new(HashMap::new()),
+        }
     }
 }
 
 #[async_trait]
 impl RangeAssignmentOracleTrait for RangeAssignmentOracle {
-    async fn full_range_id_of_key(
-        &self,
-        keyspace_id: KeyspaceId,
-        key: Bytes,
-    ) -> Option<FullRangeId> {
+    async fn full_range_id_of_key(&self, keyspace: &Keyspace, key: Bytes) -> Option<FullRangeId> {
         // TODO: Pretty slow way of resolving the range id -- optimize this
         // Get KeyspaceInfo by keyspace_id from universe client
         // First,we have already fetched the keyspace_info in Transaction::resolve_keyspace so this is redundant
         // second, we do linear search through the base ranges of keyspace_info to find the range_id which is inefficient
 
-        //  TODO: Change return type to Result<FullRangeId, Error> and do better error handling
-        let keyspace_info_request = GetKeyspaceInfoRequest {
-            keyspace_info_search_field: Some(KeyspaceInfoSearchField::KeyspaceId(
-                keyspace_id.id.to_string(),
-            )),
-        };
-        let mut client = self.universe_client.clone();
-        let keyspace_info_response = client
-            .get_keyspace_info(keyspace_info_request)
+        //  Fast path: Get full range id from cache
+        let key_str = String::from_utf8(key.to_vec()).unwrap();
+        let key_to_full_range_id_cache_key =
+            keyspace.namespace.clone() + &keyspace.name.clone() + &key_str;
+        if let Some(full_range_id) = self
+            .key_to_full_range_id
+            .read()
             .await
-            .unwrap();
+            .get(&key_to_full_range_id_cache_key)
+        {
+            return Some(full_range_id.clone());
+        }
 
-        let keyspace_info = keyspace_info_response.into_inner().keyspace_info.unwrap();
+        let keyspace_info_cache_key = keyspace.namespace.clone() + &keyspace.name.clone();
+        if self
+            .keyspace_to_keyspace_info
+            .read()
+            .await
+            .get(&keyspace_info_cache_key)
+            .is_none()
+        {
+            //  Slow path: Get keyspace_info from universe client
+            let mut client = self.universe_client.clone();
+            let keyspace_info_request = GetKeyspaceInfoRequest {
+                keyspace_info_search_field: Some(KeyspaceInfoSearchField::Keyspace(
+                    ProtoKeyspace {
+                        name: keyspace.name.to_string(),
+                        namespace: keyspace.namespace.to_string(),
+                    },
+                )),
+            };
+            let keyspace_info_response = client
+                .get_keyspace_info(keyspace_info_request)
+                .await
+                .unwrap();
+            let keyspace_info = keyspace_info_response.into_inner().keyspace_info.unwrap();
+            self.keyspace_to_keyspace_info
+                .write()
+                .await
+                .insert(keyspace_info_cache_key.clone(), keyspace_info);
+        }
 
-        for range in keyspace_info.base_key_ranges {
-            let key_range = KeyRange::from(&range);
+        //  Read keyspace_info from cache and find the full range id
+        let keyspace_info_guard = self.keyspace_to_keyspace_info.read().await;
+        let keyspace_info = keyspace_info_guard.get(&keyspace_info_cache_key).unwrap();
+        let keyspace_id = KeyspaceId::from_str(&keyspace_info.keyspace_id).unwrap();
+        for range in keyspace_info.base_key_ranges.iter() {
+            let key_range = KeyRange::from(range);
             if key_range.includes(key.clone()) {
-                return Some(FullRangeId {
-                    keyspace_id,
+                let full_range_id = FullRangeId {
+                    keyspace_id: keyspace_id.clone(),
                     range_id: Uuid::parse_str(&range.base_range_uuid).unwrap(),
-                });
+                };
+                //  Update cache
+                self.key_to_full_range_id
+                    .write()
+                    .await
+                    .insert(key_str, full_range_id.clone());
+                return Some(full_range_id.clone());
             }
         }
         None
@@ -158,10 +205,12 @@ mod tests {
             let keyspace_info_search_field =
                 _request.into_inner().keyspace_info_search_field.unwrap();
             match keyspace_info_search_field {
-                KeyspaceInfoSearchField::KeyspaceId(keyspace_id) => {
+                KeyspaceInfoSearchField::Keyspace(keyspace) => {
                     //  search keyspaces until we find the one with the same keyspace_id
                     for keyspace_info in self.keyspaces_info.lock().unwrap().iter() {
-                        if keyspace_info.keyspace_id == keyspace_id {
+                        if keyspace_info.name == keyspace.name
+                            && keyspace_info.namespace == keyspace.namespace
+                        {
                             return Ok(Response::new(GetKeyspaceInfoResponse {
                                 keyspace_info: Some(keyspace_info.clone()),
                             }));
@@ -255,7 +304,10 @@ mod tests {
         let key = Bytes::from_static(&[5]);
         let full_range_id = range_assignment_oracle
             .full_range_id_of_key(
-                KeyspaceId::new(Uuid::parse_str(&keyspace_info.keyspace_id).unwrap()),
+                &Keyspace {
+                    name: "test_keyspace".to_string(),
+                    namespace: "test_namespace".to_string(),
+                },
                 key,
             )
             .await
