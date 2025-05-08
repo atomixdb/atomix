@@ -76,8 +76,8 @@ data:
             },
             "proto_server_addr": "0.0.0.0:50054",
             "fast_network_addr": "0.0.0.0:50055",
-            "fast_network_polling_core_id": 0,
-            "background_runtime_core_ids": [0]
+            "fast_network_polling_core_id": 1,
+            "background_runtime_core_ids": []
         },
         "universe": {
             "proto_server_addr": "atomix-universe:50056"
@@ -92,8 +92,8 @@ data:
         "frontend": {
             "proto_server_addr": "0.0.0.0:50057",
             "fast_network_addr": "0.0.0.0:50058",
-            "fast_network_polling_core_id": 0,
-            "background_runtime_core_ids": [0],
+            "fast_network_polling_core_id": 1,
+            "background_runtime_core_ids": [],
             "transaction_overall_timeout": {
                 "secs": 10,
                 "nanos": 0
@@ -114,7 +114,7 @@ data:
                                 "name": "ep1",
                                 "backend_addr": "atomix-epoch-publisher:50051",
                                 "fast_network_addr": "atomix-epoch-publisher:50052",
-                                "fast_network_polling_core_id": 0
+                                "fast_network_polling_core_id": 1
                             }
                         ]
                     }
