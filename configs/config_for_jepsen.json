@@ -6,7 +6,8 @@
     },
     "proto_server_addr": "0.0.0.0:50054",
     "fast_network_addr": "0.0.0.0:50055",
-    "fast_network_polling_core_id": 1
+    "fast_network_polling_core_id": 1,
+    "background_runtime_core_ids": []
   },
   "universe": {
     "proto_server_addr": "atomix-universe:50056"
@@ -15,6 +16,7 @@
     "proto_server_addr": "127.0.0.1:50057",
     "fast_network_addr": "127.0.0.1:50058",
     "fast_network_polling_core_id": 2,
+    "background_runtime_core_ids": [],
     "transaction_overall_timeout": {
         "secs": 10,
         "nanos": 0
