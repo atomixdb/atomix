@@ -8,9 +8,13 @@ use std::{
 use common::{
     config::Config,
     host_info::{HostIdentity, HostInfo},
-    network::{fast_network::FastNetwork, for_testing::udp_fast_network::UdpFastNetwork},
+    network::{
+        fast_network::spawn_tokio_polling_thread, for_testing::udp_fast_network::UdpFastNetwork,
+    },
     region::{Region, Zone},
+    util::core_affinity::restrict_to_cores,
 };
+use core_affinity;
 use rangeserver::{cache::memtabledb::MemTableDB, server::Server, storage::cassandra::Cassandra};
 use tokio::net::TcpListener;
 use tokio::runtime::Builder;
@@ -42,6 +46,16 @@ fn main() {
     let args = Args::parse();
     let config: Config = serde_json::from_str(&read_to_string(&args.config).unwrap()).unwrap();
 
+    let mut background_runtime_cores = config.range_server.background_runtime_core_ids.clone();
+    if background_runtime_cores.is_empty() {
+        background_runtime_cores = core_affinity::get_core_ids()
+            .unwrap()
+            .iter()
+            .map(|id| id.id as u32)
+            .collect();
+    }
+    restrict_to_cores(&background_runtime_cores);
+
     let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     let runtime_handle = runtime.handle().clone();
     let fast_network_addr = config
@@ -56,10 +70,12 @@ fn main() {
     ));
     let fast_network_clone = fast_network.clone();
     runtime.spawn(async move {
-        loop {
-            fast_network_clone.poll();
-            tokio::task::yield_now().await
-        }
+        spawn_tokio_polling_thread(
+            "fast-network-poller-rangeserver",
+            fast_network_clone,
+            config.range_server.fast_network_polling_core_id as usize,
+        )
+        .await;
     });
     let server_handle = runtime.spawn(async move {
         let cancellation_token = CancellationToken::new();
@@ -93,8 +109,12 @@ fn main() {
         let proto_server_listener = TcpListener::bind(proto_server_addr).await.unwrap();
         info!("Connecting to Cassandra at {}", config.cassandra.cql_addr);
         let storage = Arc::new(Cassandra::new(config.cassandra.cql_addr.to_string()).await);
-        // TODO: set number of threads and pin to cores.
-        let bg_runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+
+        let bg_runtime = Builder::new_multi_thread()
+            .worker_threads(background_runtime_cores.len())
+            .enable_all()
+            .build()
+            .unwrap();
 
         let epoch_supplier = Arc::new(rangeserver::epoch_supplier::reader::Reader::new(
             fast_network.clone(),

@@ -67,6 +67,8 @@ async fn init_config() -> Config {
             range_maintenance_duration: time::Duration::from_secs(1),
             proto_server_addr: "127.0.0.1:50054".parse().unwrap(),
             fast_network_addr: "127.0.0.1:50055".parse().unwrap(),
+            fast_network_polling_core_id: 1,
+            background_runtime_core_ids: vec![1],
         },
         universe: UniverseConfig {
             proto_server_addr: "127.0.0.1:50056".parse().unwrap(),
@@ -74,6 +76,8 @@ async fn init_config() -> Config {
         frontend: FrontendConfig {
             proto_server_addr: "127.0.0.1:50057".parse().unwrap(),
             fast_network_addr: "127.0.0.1:50058".parse().unwrap(),
+            fast_network_polling_core_id: 1,
+            background_runtime_core_ids: vec![1],
             transaction_overall_timeout: time::Duration::from_secs(10),
         },
         cassandra: CassandraConfig {
@@ -87,6 +91,7 @@ async fn init_config() -> Config {
         // Not used in these tests.
         backend_addr: "127.0.0.1:50051".parse().unwrap(),
         fast_network_addr: "127.0.0.1:50052".parse().unwrap(),
+        fast_network_polling_core_id: 1,
     }]);
     let epoch_publishers_set = EpochPublisherSet {
         name: "ps1".to_string(),

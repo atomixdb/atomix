@@ -4,7 +4,10 @@ use std::{fs::read_to_string, net::ToSocketAddrs, sync::Arc};
 
 use common::{
     config::Config,
-    network::{fast_network::FastNetwork, for_testing::udp_fast_network::UdpFastNetwork},
+    network::{
+        fast_network::spawn_tokio_polling_thread, fast_network::FastNetwork,
+        for_testing::udp_fast_network::UdpFastNetwork,
+    },
     region::{Region, Zone},
 };
 use epoch_publisher::server;
@@ -69,11 +72,16 @@ fn main() {
         UdpSocket::bind(fast_network_addr).unwrap(),
     ));
     let fast_network_clone = fast_network.clone();
+    let publisher_name_str = publisher_name.clone();
+    let fast_network_polling_core_id =
+        publisher_config.fast_network_polling_core_id.clone() as usize;
     runtime.spawn(async move {
-        loop {
-            fast_network_clone.poll();
-            tokio::task::yield_now().await
-        }
+        spawn_tokio_polling_thread(
+            &format!("fast-network-poller-epoch-publisher {}", publisher_name_str),
+            fast_network_clone,
+            fast_network_polling_core_id,
+        )
+        .await;
     });
     let bg_runtime = Builder::new_multi_thread().enable_all().build().unwrap();
     let server = server::Server::new(

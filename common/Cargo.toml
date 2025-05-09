@@ -17,3 +17,5 @@ serde = { version = "1.0.210", features = ["derive"] }
 tracing = "0.1.40"
 async-trait = "0.1.83"
 chrono = "0.4.38"
+affinity = "0.1.2"
+nix = { version = "0.27.1", features = ["sched"] }
