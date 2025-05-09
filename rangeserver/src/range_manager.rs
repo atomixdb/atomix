@@ -1,8 +1,6 @@
 pub mod r#impl;
 mod lock_table;
-mod log_applicator;
 mod replication_client;
-pub mod r#secondary;
 
 use crate::error::Error;
 use bytes::Bytes;
@@ -10,11 +8,7 @@ use common::replication_mapping::ReplicationMapping;
 use common::transaction_info::TransactionInfo;
 use flatbuf::rangeserver_flatbuffers::range_server::*;
 use proto::rangeserver::{ReplicateRequest, ReplicateResponse};
-use secondary::ReplicationError;
-use std::pin::Pin;
 use std::sync::Arc;
-use tokio_stream::Stream;
-use tonic::Status as TStatus;
 use tonic::{async_trait, Streaming};
 use uuid::Uuid;
 
@@ -73,22 +67,4 @@ pub trait RangeManager: LoadableRange {
     /// Starts replicating the range to a secondary range.
     async fn start_replication(&self, replication_mapping: ReplicationMapping)
         -> Result<(), Error>;
-}
-
-/// A trait for secondary range managers.
-/// TODO: We don't need all the methods of RangeManager here. Introduce a new
-/// trait that includes the common methods, which are mainly about range
-/// management. Basically, the lifecycle of both primary and secondary ranges
-/// should be similar in terms of getting / renewing leases.
-#[async_trait]
-
-pub trait SecondaryRangeManager: LoadableRange {
-    /// Get the value associated with a key.
-    async fn get(&self, tx: Arc<TransactionInfo>, key: Bytes) -> Result<GetResult, Error>;
-    /// Sets the replication stream for this range.
-    async fn start_replication(
-        &self,
-        recv_stream: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
-        send_stream: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
-    ) -> Result<(), ReplicationError>;
 }

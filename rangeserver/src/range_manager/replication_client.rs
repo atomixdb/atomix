@@ -43,6 +43,7 @@ impl ReplicationClientHandle {
     pub async fn queue_update(
         &self,
         wal_offset: u64,
+        commit_epoch: u64,
         prepare: &PrepareRequest<'_>,
     ) -> Result<(), Error> {
         let puts = prepare.puts().map_or(vec![], |puts| {

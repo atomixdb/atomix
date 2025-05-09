@@ -5,6 +5,7 @@ pub mod for_testing;
 mod key_version;
 mod prefetching_buffer;
 mod range_manager;
+mod secondary_range_manager;
 pub mod server;
 pub mod storage;
 pub mod transaction_abort_reason;

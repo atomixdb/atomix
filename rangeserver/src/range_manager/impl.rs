@@ -45,22 +45,22 @@ enum State {
     Unloaded,
 }
 
-struct HighestKnownEpoch {
+pub struct HighestKnownEpoch {
     val: RwLock<u64>,
 }
 
 impl HighestKnownEpoch {
-    fn new(e: u64) -> HighestKnownEpoch {
+    pub fn new(e: u64) -> HighestKnownEpoch {
         HighestKnownEpoch {
             val: RwLock::new(e),
         }
     }
 
-    async fn read(&self) -> u64 {
+    pub async fn read(&self) -> u64 {
         *self.val.read().await
     }
 
-    async fn maybe_update(&self, new_epoch: u64) {
+    pub async fn maybe_update(&self, new_epoch: u64) {
         let mut v = self.val.write().await;
         *v = std::cmp::max(*v, new_epoch)
     }
@@ -392,9 +392,11 @@ where
                 // correct wal_offset, it's not returned right now.
                 // Queue update for the secondaries if they exist
                 {
+                    let commit_epoch = commit.epoch();
                     let replication_handles = state.replication_handles.lock().await;
                     for handle in replication_handles.values() {
-                        if let Err(e) = handle.queue_update(0, &prepare_record).await {
+                        if let Err(e) = handle.queue_update(0, commit_epoch, &prepare_record).await
+                        {
                             error!("Failed to queue update for secondary: {:#?}", e);
                         }
                     }
@@ -434,6 +436,7 @@ where
                     host: replication_mapping.assignee.clone(),
                     port: self.config.range_server.proto_server_addr.port,
                 };
+                info!("Secondary address: {:?}", secondary_address);
                 let (mut replication_client, handle) =
                     ReplicationClient::new(secondary_address, replication_mapping.secondary_range);
                 replication_handles.insert(replication_mapping.secondary_range.range_id, handle);
@@ -506,7 +509,7 @@ where
                     .take_ownership_and_load_range(range_id)
                     .await
                     .map_err(Error::from_storage_error)?;
-                debug!("Loaded range: {:?}", range_info.id);
+                info!("Loaded range: {:?}", range_info.id);
 
                 // Epoch read from the provider can be 1 less than the true epoch. The highest known epoch
                 // of a range cannot move backward even across range load/unloads, so to maintain that guarantee
