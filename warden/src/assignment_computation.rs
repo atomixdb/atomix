@@ -249,7 +249,7 @@ impl AssignmentComputationImpl {
                     // Find the assignment for the primary range
                     if let Some(assignment) = range_map
                         .iter_mut()
-                        .find(|a| a.range.id == rm.primary_range.range_id)
+                        .find(|a| a.range.id == rm.secondary_range.range_id)
                     {
                         rm.assignee = assignment.assignee.clone();
                     }
@@ -260,6 +260,8 @@ impl AssignmentComputationImpl {
                     range_map.err().unwrap()
                 );
             }
+            // Filter out the replication mappings with no assignee.
+            rms.retain(|rm| !rm.assignee.is_empty());
             replication_mappings.extend(rms);
         }
         *self.replication_mappings.lock().unwrap() = replication_mappings;
@@ -527,7 +529,7 @@ impl AssignmentComputation for AssignmentComputationImpl {
                             keyspace_id: r.range.keyspace_id.id.to_string(),
                             range_id: r.range.id.to_string(),
                         }),
-                        r#type: RangeType::Primary as i32,
+                        r#type: r.range.range_type.into(),
                     })
                     .collect();
                 let update = WardenUpdate {
