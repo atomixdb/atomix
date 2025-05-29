@@ -7,8 +7,8 @@ use common::{
     full_range_id::FullRangeId,
     host_info::{HostIdentity, HostInfo},
     key_range::KeyRange,
-    keyspace_id::KeyspaceId,
     keyspace::Keyspace,
+    keyspace_id::KeyspaceId,
     region::{Region, Zone},
 };
 use proto::universe::universe_client::UniverseClient;

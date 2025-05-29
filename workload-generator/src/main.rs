@@ -18,7 +18,7 @@ use workload_generator::{
 #[command(name = "workload-generator")]
 #[command(about = "Generates workloads based on config files", long_about = None)]
 struct Args {
-    #[arg(long, default_value = "config.json")]
+    #[arg(long, default_value = "configs/config.json")]
     config: String,
 
     #[arg(long, default_value = "workload-generator/configs/config.json")]
