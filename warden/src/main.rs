@@ -1,14 +1,10 @@
 use clap::Parser;
 use common::config::Config;
 use common::region::Region;
-use server::run_warden_server;
 use std::fs::read_to_string;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-
-mod assignment_computation;
-mod persistence;
-mod server;
+use warden::server::run_warden_server;
 
 #[derive(Parser, Debug)]
 #[command(name = "warden")]

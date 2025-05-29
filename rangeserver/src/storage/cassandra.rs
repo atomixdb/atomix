@@ -35,6 +35,7 @@ struct CqlRangeLease {
     leader_sequence_number: i64,
     epoch_lease: CqlEpochRange,
     safe_snapshot_epochs: CqlEpochRange,
+    applied_secondary_offset: Option<i64>,
 }
 
 #[derive(Debug, FromRow)]
@@ -62,7 +63,7 @@ impl CqlRangeLease {
 }
 
 static GET_RANGE_LEASE_QUERY: &str = r#"
-  SELECT range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs FROM atomix.range_leases
+  SELECT range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs, applied_secondary_offset FROM atomix.range_leases
     WHERE range_id = ?;
 "#;
 
@@ -74,6 +75,12 @@ static ACQUIRE_RANGE_LEASE_QUERY: &str = r#"
 
 static RENEW_EPOCH_LEASE_QUERY: &str = r#"
   UPDATE atomix.range_leases SET epoch_lease = ?
+    WHERE range_id = ?
+    IF leader_sequence_number = ?
+"#;
+
+static UPDATE_SECONDARY_STATUS_QUERY: &str = r#"
+  UPDATE atomix.range_leases SET applied_secondary_offset = ?
     WHERE range_id = ?
     IF leader_sequence_number = ?
 "#;
@@ -126,7 +133,11 @@ impl Cassandra {
             None => Err(Error::RangeDoesNotExist),
             Some(mut rows) => {
                 if rows.len() != 1 {
-                    panic!("found multiple ranges with the same id!");
+                    panic!(
+                        "found multiple ranges with id {}. Number of rows: {}",
+                        range_id.range_id,
+                        rows.len()
+                    );
                 } else {
                     let row = rows.pop().unwrap();
                     // Print row as is for debugging purposes
@@ -165,7 +176,7 @@ impl Storage for Cassandra {
         if cql_lease.leader_sequence_number != new_leader_sequence_number {
             Err(Error::RangeOwnershipLost)
         } else {
-            Ok(RangeInfo {
+            let common = CommonRangeInfo {
                 id: range_id.range_id,
                 range_type: cql_lease.range_type.clone(),
                 leader_sequence_number: new_leader_sequence_number as u64,
@@ -174,8 +185,38 @@ impl Storage for Cassandra {
                     cql_lease.epoch_lease.upper_bound_inclusive as u64,
                 ),
                 key_range: cql_lease.key_range(),
+            };
+            Ok(match cql_lease.range_type {
+                RangeType::Primary => RangeInfo::Primary { common },
+                RangeType::Secondary => RangeInfo::Secondary {
+                    common,
+                    applied_secondary_wal_offset: cql_lease
+                        .applied_secondary_offset
+                        .map(|o| o as u64),
+                },
             })
         }
+    }
+
+    async fn update_secondary_status(
+        &self,
+        range_id: FullRangeId,
+        applied_secondary_offset: Option<u64>,
+        leader_sequence_number: u64,
+    ) -> Result<(), Error> {
+        let _ = self
+            .session
+            .query(
+                UPDATE_SECONDARY_STATUS_QUERY,
+                (
+                    applied_secondary_offset.map(|e| e as i64),
+                    range_id.range_id,
+                    leader_sequence_number as i64,
+                ),
+            )
+            .await
+            .map_err(scylla_query_error_to_persistence_error)?;
+        Ok(())
     }
 
     async fn renew_epoch_lease(
@@ -291,14 +332,12 @@ impl Storage for Cassandra {
 pub mod for_testing {
     use super::*;
     use common::keyspace_id::KeyspaceId;
-    use scylla::{
-        query::{self, Query},
-        statement::SerialConsistency,
-    };
+    use scylla::{query::Query, statement::SerialConsistency};
+    use tracing::info;
 
     static INSERT_INTO_RANGE_LEASE_QUERY: &str = r#"
-    INSERT INTO atomix.range_leases(range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO atomix.range_leases(range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs, applied_secondary_offset)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       IF NOT EXISTS
   "#;
 
@@ -334,13 +373,13 @@ pub mod for_testing {
         }
     }
 
-    pub async fn init() -> TestContext {
+    pub async fn init_secondary_for_primary(keyspace_id: KeyspaceId) -> FullRangeId {
         let cassandra = Arc::new(Cassandra::create_test().await);
-        let keyspace_id = KeyspaceId::new(Uuid::new_v4());
+        let range_type = RangeType::Secondary;
         let range_id = Uuid::new_v4();
         let cql_range = CqlRangeLease {
             range_id,
-            range_type: RangeType::Primary,
+            range_type,
             leader_sequence_number: 0,
             key_lower_bound_inclusive: None,
             key_upper_bound_exclusive: None,
@@ -352,6 +391,53 @@ pub mod for_testing {
                 lower_bound_inclusive: 1,
                 upper_bound_inclusive: 0,
             },
+            applied_secondary_offset: None,
+        };
+        let mut query = Query::new(INSERT_INTO_RANGE_LEASE_QUERY);
+        query.set_serial_consistency(Some(SerialConsistency::Serial));
+
+        cassandra
+            .session
+            .query(
+                query,
+                (
+                    cql_range.range_id,
+                    cql_range.range_type,
+                    cql_range.key_lower_bound_inclusive,
+                    cql_range.key_upper_bound_exclusive,
+                    cql_range.leader_sequence_number,
+                    cql_range.epoch_lease,
+                    cql_range.safe_snapshot_epochs,
+                    None::<i64>,
+                ),
+            )
+            .await
+            .unwrap();
+        FullRangeId {
+            keyspace_id,
+            range_id,
+        }
+    }
+
+    pub async fn init(range_type: RangeType) -> TestContext {
+        let cassandra = Arc::new(Cassandra::create_test().await);
+        let keyspace_id = KeyspaceId::new(Uuid::new_v4());
+        let range_id = Uuid::new_v4();
+        let cql_range = CqlRangeLease {
+            range_id,
+            range_type,
+            leader_sequence_number: 0,
+            key_lower_bound_inclusive: None,
+            key_upper_bound_exclusive: None,
+            epoch_lease: CqlEpochRange {
+                lower_bound_inclusive: 0,
+                upper_bound_inclusive: 0,
+            },
+            safe_snapshot_epochs: CqlEpochRange {
+                lower_bound_inclusive: 1,
+                upper_bound_inclusive: 0,
+            },
+            applied_secondary_offset: None,
         };
         let mut query = Query::new(INSERT_INTO_RANGE_LEASE_QUERY);
         query.set_serial_consistency(Some(SerialConsistency::Serial));
@@ -368,6 +454,7 @@ pub mod for_testing {
                     cql_range.leader_sequence_number,
                     cql_range.epoch_lease,
                     cql_range.safe_snapshot_epochs,
+                    None::<i64>,
                 ),
             )
             .await
@@ -387,7 +474,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn basic_take_ownership_and_renew_lease() {
-        let context = init().await;
+        let context = init(RangeType::Primary).await;
         let cassandra = context.cassandra.clone();
         let full_range_id = FullRangeId {
             keyspace_id: context.keyspace_id,
@@ -398,14 +485,18 @@ pub mod tests {
             .await
             .unwrap();
         cassandra
-            .renew_epoch_lease(full_range_id, (0, 1), range_info.leader_sequence_number)
+            .renew_epoch_lease(
+                full_range_id,
+                (0, 1),
+                range_info.common().leader_sequence_number,
+            )
             .await
             .unwrap();
     }
 
     #[tokio::test]
     async fn basic_crud() {
-        let context = init().await;
+        let context = init(RangeType::Primary).await;
         let cassandra = context.cassandra.clone();
         let full_range_id = FullRangeId {
             keyspace_id: context.keyspace_id,

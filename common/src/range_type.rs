@@ -45,3 +45,12 @@ impl FromCqlVal<CqlValue> for RangeType {
         }
     }
 }
+
+impl From<RangeType> for i32 {
+    fn from(range_type: RangeType) -> Self {
+        match range_type {
+            RangeType::Primary => proto::warden::RangeType::Primary as i32,
+            RangeType::Secondary => proto::warden::RangeType::Secondary as i32,
+        }
+    }
+}

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 common = {path = "../common"}
 proto = {path = "../proto"}
+pub_fields = { path = "../pub_fields" }
 tokio = { version = "1", features = ["full"] }
 bytes = "1"
 chrono = "0.4.34"
@@ -27,3 +28,6 @@ scylla = "0.13.2"
 tokio-util = "0.7.11"
 async-trait = "0.1.83"
 clap = { version = "4.5", features = ["derive"] }
+
+[features]
+test_access = []

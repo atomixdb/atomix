@@ -6,7 +6,7 @@ pub struct HostIdentity {
     pub zone: crate::region::Zone,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HostInfo {
     pub identity: HostIdentity,
     pub address: SocketAddr,

@@ -1,0 +1,5 @@
+error[E0451]: field `a` of struct `Bar` is private
+  --> tests/ui/fail.rs:11:27
+   |
+11 |     let _b = inner::Bar { a: 0 };
+   |                           ^^^^ private field

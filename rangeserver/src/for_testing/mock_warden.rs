@@ -6,22 +6,24 @@ use std::{
 
 use common::full_range_id::FullRangeId;
 use proto::warden::{
+    range_server_request,
     warden_server::{Warden, WardenServer},
     warden_update::Update::{FullAssignment, IncrementalAssignment},
-    RangeType, RegisterRangeServerRequest, WardenUpdate,
+    LoadedRangeStatus, RangeServerRequest, RangeType, WardenUpdate,
 };
 use tokio::{
     net::TcpListener,
     sync::{mpsc, RwLock},
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{transport::Server, Request, Response, Status, Streaming};
 use uuid::Uuid;
 
 struct WardenState {
     range_to_host: RwLock<HashMap<Uuid, String>>,
     host_ranges: RwLock<HashMap<String, HashSet<FullRangeId>>>,
     rs_connections: RwLock<HashMap<String, mpsc::Sender<Result<WardenUpdate, Status>>>>,
+    range_statuses: RwLock<HashMap<FullRangeId, LoadedRangeStatus>>,
 }
 pub struct MockWarden {
     state: Arc<WardenState>,
@@ -49,6 +51,7 @@ impl MockWarden {
             range_to_host: RwLock::new(HashMap::new()),
             host_ranges: RwLock::new(HashMap::new()),
             rs_connections: RwLock::new(HashMap::new()),
+            range_statuses: RwLock::new(HashMap::new()),
         });
 
         MockWarden {
@@ -94,6 +97,7 @@ impl MockWarden {
                     load: vec![],
                     load_mapping: vec![],
                     unload_mapping: vec![],
+                    desired_applied_epoch: vec![],
                 };
                 let warden_update = WardenUpdate {
                     update: Some(IncrementalAssignment(incremental)),
@@ -127,6 +131,7 @@ impl MockWarden {
             unload: vec![],
             load_mapping: vec![],
             unload_mapping: vec![],
+            desired_applied_epoch: vec![],
         };
         let warden_update = WardenUpdate {
             update: Some(IncrementalAssignment(incremental)),
@@ -155,9 +160,21 @@ impl Warden for WardenState {
 
     async fn register_range_server(
         &self,
-        request: Request<RegisterRangeServerRequest>,
+        request: Request<Streaming<RangeServerRequest>>,
     ) -> Result<Response<Self::RegisterRangeServerStream>, Status> {
-        let host = request.get_ref().range_server.clone().unwrap().identity;
+        let mut stream = request.into_inner();
+        let first_msg = stream
+            .message()
+            .await?
+            .ok_or(Status::invalid_argument("Expected a register request"))?;
+        let register_request = match first_msg.request {
+            Some(range_server_request::Request::Register(register_request)) => register_request,
+            _ => return Err(Status::invalid_argument("Expected a register request")),
+        };
+        let host = register_request
+            .range_server
+            .ok_or(Status::invalid_argument("range_server field is not set"))?
+            .identity;
         let (tx, rx) = mpsc::channel(40);
         let host_ranges = self.host_ranges.read().await;
         let mut connections = self.rs_connections.write().await;
@@ -170,6 +187,7 @@ impl Warden for WardenState {
             version: 1,
             range: assigned_ranges,
             replication_mapping: vec![],
+            desired_applied_epoch: vec![],
         };
         let warden_update = WardenUpdate {
             update: Some(FullAssignment(full)),

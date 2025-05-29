@@ -73,32 +73,17 @@ impl ReplicationClientHandle {
             puts,
             transaction_id,
             primary_wal_offset: wal_offset,
-            epoch: 0,
+            epoch: commit_epoch,
         };
-
-        info!(
-            "Attempting to send update with wal_offset {} to replication client",
-            wal_offset
-        );
-
-        // Get current state to include in error logging
-        let state = self.state.read().await;
-        let state_str = match *state {
-            State::NotStarted => "NotStarted",
-            State::Running(_) => "Running",
-            State::Stopped => "Stopped",
-        };
-        drop(state);
-
         self.update_send.send(data).await.map_err(|e| {
-            error!(
-                "Failed to send update to replication client (current state: {}): {:#?}",
-                state_str, e
-            );
+            error!("Failed to send update to replication client: {:#?}", e);
             Error::InternalError(Arc::new(e))
         })?;
 
-        info!("Successfully queued update with wal_offset {}", wal_offset);
+        info!(
+            "Successfully queued update with primary wal_offset {}",
+            wal_offset
+        );
         Ok(())
     }
 }

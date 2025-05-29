@@ -12,6 +12,7 @@ use common::full_range_id::FullRangeId;
 use common::replication_mapping::ReplicationMapping;
 use common::transaction_info::TransactionInfo;
 
+use proto::warden::PrimaryRangeStatus;
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -36,6 +37,7 @@ struct LoadedState {
     // TODO: need more efficient representation of prepares than raw bytes.
     pending_prepare_records: Mutex<HashMap<Uuid, Bytes>>,
     replication_handles: Mutex<HashMap<Uuid, ReplicationClientHandle>>,
+    renew_epoch_lease_task: Option<tokio::task::JoinHandle<Result<(), Error>>>,
 }
 
 enum State {
@@ -66,6 +68,7 @@ impl HighestKnownEpoch {
     }
 }
 
+#[cfg_attr(test, pub_fields::pub_fields)]
 pub struct RangeManager<S, W>
 where
     S: Storage,
@@ -129,6 +132,17 @@ where
 
     async fn unload(&self) {
         let mut state = self.state.write().await;
+        match state.deref_mut() {
+            State::Loaded(loaded_state) => {
+                if let Some(task) = loaded_state.renew_epoch_lease_task.take() {
+                    task.abort();
+                    if let Err(e) = task.await {
+                        error!("Renew epoch lease task error: {}", e);
+                    }
+                }
+            }
+            _ => {}
+        }
         *state = State::Unloaded;
     }
 
@@ -184,8 +198,12 @@ where
         match s.deref() {
             State::NotLoaded | State::Unloaded | State::Loading(_) => Err(Error::RangeIsNotLoaded),
             State::Loaded(state) => {
-                if !state.range_info.key_range.includes(key.clone()) {
-                    println!("Key {:?} is outside range {:?}", key, state.range_info,);
+                if !state.range_info.common().key_range.includes(key.clone()) {
+                    println!(
+                        "Key {:?} is outside range {:?}",
+                        key,
+                        state.range_info.common().key_range
+                    );
 
                     return Err(Error::KeyIsOutOfRange);
                 };
@@ -193,7 +211,7 @@ where
 
                 let mut get_result = GetResult {
                     val: None,
-                    leader_sequence_number: state.range_info.leader_sequence_number as i64,
+                    leader_sequence_number: state.range_info.common().leader_sequence_number as i64,
                 };
 
                 // check prefetch buffer
@@ -236,7 +254,7 @@ where
                     for put in put.iter() {
                         // TODO: too much copying :(
                         let key = Bytes::copy_from_slice(put.key().unwrap().k().unwrap().bytes());
-                        if !state.range_info.key_range.includes(key) {
+                        if !state.range_info.common().key_range.includes(key) {
                             return Err(Error::KeyIsOutOfRange);
                         }
                     }
@@ -244,7 +262,7 @@ where
                 for del in prepare.deletes().iter() {
                     for del in del.iter() {
                         let key = Bytes::copy_from_slice(del.k().unwrap().bytes());
-                        if !state.range_info.key_range.includes(key) {
+                        if !state.range_info.common().key_range.includes(key) {
                             return Err(Error::KeyIsOutOfRange);
                         }
                     }
@@ -276,7 +294,7 @@ where
 
                 Ok(PrepareResult {
                     highest_known_epoch,
-                    epoch_lease: state.range_info.epoch_lease,
+                    epoch_lease: state.range_info.common().epoch_lease,
                 })
             }
         }
@@ -331,7 +349,8 @@ where
                 state.highest_known_epoch.maybe_update(commit.epoch()).await;
 
                 // TODO: handle potential duplicates here.
-                self.wal
+                let wal_offset = self
+                    .wal
                     .append_commit(commit)
                     .await
                     .map_err(Error::from_wal_error)?;
@@ -388,14 +407,15 @@ where
                     }
                 }
 
-                // TODO(yanniszark): Make sure this can't block. Also insert the
-                // correct wal_offset, it's not returned right now.
+                // TODO(yanniszark): Make sure this can't block.
                 // Queue update for the secondaries if they exist
                 {
                     let commit_epoch = commit.epoch();
                     let replication_handles = state.replication_handles.lock().await;
                     for handle in replication_handles.values() {
-                        if let Err(e) = handle.queue_update(0, commit_epoch, &prepare_record).await
+                        if let Err(e) = handle
+                            .queue_update(wal_offset, commit_epoch, &prepare_record)
+                            .await
                         {
                             error!("Failed to queue update for secondary: {:#?}", e);
                         }
@@ -451,6 +471,19 @@ where
                 });
                 Ok(())
             }
+        }
+    }
+
+    async fn status(&self) -> Result<PrimaryRangeStatus, Error> {
+        let s = self.state.read().await;
+        match s.deref() {
+            State::NotLoaded | State::Unloaded | State::Loading(_) => {
+                return Err(Error::RangeIsNotLoaded)
+            }
+            State::Loaded(state) => Ok(PrimaryRangeStatus {
+                range_id: Some(self.range_id.into()),
+                leader_sequence_number: state.range_info.common().leader_sequence_number,
+            }),
         }
     }
 }
@@ -509,7 +542,7 @@ where
                     .take_ownership_and_load_range(range_id)
                     .await
                     .map_err(Error::from_storage_error)?;
-                info!("Loaded range: {:?}", range_info.id);
+                info!("Loaded range: {:?}", range_info.common().id);
 
                 // Epoch read from the provider can be 1 less than the true epoch. The highest known epoch
                 // of a range cannot move backward even across range load/unloads, so to maintain that guarantee
@@ -518,26 +551,27 @@ where
                     .wait_until_epoch(epoch + 1, chrono::Duration::seconds(10))
                     .await
                     .map_err(Error::from_epoch_supplier_error)?;
-                debug!("Epoch updated for range: {:?}", range_info.id);
+                debug!("Epoch updated for range: {:?}", range_info.common().id);
                 // Get a new epoch lease.
                 // Calculate how many epochs we need for a ~10 second lease
                 let highest_known_epoch = epoch + 1;
                 let new_epoch_lease_lower_bound =
-                    std::cmp::max(highest_known_epoch, range_info.epoch_lease.1 + 1);
+                    std::cmp::max(highest_known_epoch, range_info.common().epoch_lease.1 + 1);
                 let new_epoch_lease_upper_bound =
                     new_epoch_lease_lower_bound + num_epochs_per_lease;
                 storage
                     .renew_epoch_lease(
                         range_id,
                         (new_epoch_lease_lower_bound, new_epoch_lease_upper_bound),
-                        range_info.leader_sequence_number,
+                        range_info.common().leader_sequence_number,
                     )
                     .await
                     .map_err(Error::from_storage_error)?;
-                range_info.epoch_lease = (new_epoch_lease_lower_bound, new_epoch_lease_upper_bound);
+                range_info.common_mut().epoch_lease =
+                    (new_epoch_lease_lower_bound, new_epoch_lease_upper_bound);
                 wal.sync().await.map_err(Error::from_wal_error)?;
                 // Create a recurrent task to renew.
-                bg_runtime.spawn(async move {
+                let renew_epoch_lease_task = bg_runtime.spawn(async move {
                     Self::renew_epoch_lease_task(
                         range_id,
                         epoch_supplier,
@@ -555,6 +589,7 @@ where
                     lock_table: lock_table::LockTable::new(),
                     pending_prepare_records: Mutex::new(HashMap::new()),
                     replication_handles: Mutex::new(HashMap::new()),
+                    renew_epoch_lease_task: Some(renew_epoch_lease_task),
                 })
             })
             .await
@@ -578,8 +613,8 @@ where
                 .map_err(Error::from_epoch_supplier_error)?;
             let highest_known_epoch = epoch + 1;
             if let State::Loaded(state) = state.read().await.deref() {
-                old_lease = state.range_info.epoch_lease;
-                leader_sequence_number = state.range_info.leader_sequence_number;
+                old_lease = state.range_info.common().epoch_lease;
+                leader_sequence_number = state.range_info.common().leader_sequence_number;
             } else {
                 tokio::time::sleep(lease_renewal_interval).await;
                 continue;
@@ -613,10 +648,10 @@ where
             if let State::Loaded(state) = state.write().await.deref_mut() {
                 // This should never happen as only this task changes the epoch lease.
                 assert_eq!(
-                    state.range_info.epoch_lease, old_lease,
+                    state.range_info.common().epoch_lease, old_lease,
                     "Epoch lease changed by someone else, but only this task should be changing it!"
                 );
-                state.range_info.epoch_lease = new_lease;
+                state.range_info.common_mut().epoch_lease = new_lease;
                 state
                     .highest_known_epoch
                     .maybe_update(highest_known_epoch)
@@ -657,6 +692,7 @@ mod tests {
     use common::config::{
         CassandraConfig, EpochConfig, FrontendConfig, HostPort, RangeServerConfig, UniverseConfig,
     };
+    use common::range_type::RangeType;
     use common::transaction_info::TransactionInfo;
     use common::util;
     use core::time;
@@ -789,7 +825,7 @@ mod tests {
     async fn init() -> TestContext {
         let epoch_supplier = Arc::new(EpochSupplier::new());
         let storage_context: crate::storage::cassandra::for_testing::TestContext =
-            crate::storage::cassandra::for_testing::init().await;
+            crate::storage::cassandra::for_testing::init(RangeType::Primary).await;
         let cassandra = storage_context.cassandra.clone();
         let prefetching_buffer = Arc::new(PrefetchingBuffer::new());
         let range_id = FullRangeId {
@@ -889,13 +925,13 @@ mod tests {
         let rm = context.rm.clone();
         // Get the current lease bounds.
         let initial_lease = match rm.state.read().await.deref() {
-            State::Loaded(state) => state.range_info.epoch_lease,
+            State::Loaded(state) => state.range_info.common().epoch_lease,
             _ => panic!("Range is not loaded"),
         };
         // Sleep for 2 seconds to allow the lease renewal task to run at least once.
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         let final_lease = match rm.state.read().await.deref() {
-            State::Loaded(state) => state.range_info.epoch_lease,
+            State::Loaded(state) => state.range_info.common().epoch_lease,
             _ => panic!("Range is not loaded"),
         };
         // Check that the upper bound has increased.

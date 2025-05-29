@@ -12,7 +12,10 @@ use common::{
 use pin_project::{pin_project, pinned_drop};
 use proto::{
     universe::universe_client::UniverseClient,
-    warden::{warden_server::Warden, RegisterRangeServerRequest, WardenUpdate},
+    warden::{
+        range_server_request, warden_server::Warden, RangeServerRequest,
+        RegisterRangeServerRequest, WardenUpdate,
+    },
 };
 use tokio::sync::broadcast;
 use tokio_stream::{
@@ -20,12 +23,13 @@ use tokio_stream::{
     Stream,
 };
 use tokio_util::sync::CancellationToken;
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, info, instrument};
 
 use crate::{
     assignment_computation::{AssignmentComputation, AssignmentComputationImpl},
     persistence::cassandra::Cassandra,
+    stream_multiplexer::StreamMultiplexer,
 };
 
 /// Implementation of the Warden service.
@@ -40,11 +44,20 @@ impl Warden for WardenServer {
     #[instrument(skip(self))]
     async fn register_range_server(
         &self,
-        request: Request<RegisterRangeServerRequest>,
+        request: Request<Streaming<RangeServerRequest>>,
     ) -> Result<Response<Self::RegisterRangeServerStream>, Status> {
         debug!("Got a register_range_server request: {:?}", request);
 
-        let register_request = request.into_inner();
+        // The first message in the stream is the register request.
+        let mut stream = request.into_inner();
+        let first_msg = stream.message().await?;
+        let register_request = match first_msg {
+            Some(RangeServerRequest {
+                request: Some(range_server_request::Request::Register(register_request)),
+            }) => register_request,
+            _ => return Err(Status::invalid_argument("Expected a register request")),
+        };
+
         match register_request.range_server {
             None => {
                 return Err(Status::invalid_argument(
@@ -72,7 +85,7 @@ impl Warden for WardenServer {
                 };
                 match self
                     .assignment_computation
-                    .register_range_server(host_info.clone())
+                    .register_range_server(host_info.clone(), Box::pin(stream))
                 {
                     Ok(update_receiver) => Ok(Response::new(AssignmentUpdateStream::new(
                         update_receiver,
@@ -113,14 +126,16 @@ pub async fn run_warden_server(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let addr = addr.to_socket_addrs()?.next().ok_or("Invalid address")?;
     let universe_client = UniverseClient::connect(universe_addr).await?;
+    let (stream_mux, heartbeat_receiver) = StreamMultiplexer::new(100, runtime.clone());
     let assignment_computation = AssignmentComputationImpl::new(
         universe_client,
+        stream_mux,
         region,
         Arc::new(Cassandra::new(cassandra_addr).await),
     )
     .await;
     let clone = assignment_computation.clone();
-    clone.start_computation(runtime, cancellation_token);
+    clone.start_computation(heartbeat_receiver, runtime, cancellation_token);
     let warden_server = WardenServer::new(assignment_computation);
 
     info!("WardenServer listening on {}", addr);
@@ -229,6 +244,7 @@ mod tests {
     use common::range_type::RangeType;
     use proto::warden::warden_client::WardenClient;
     use tokio::sync::broadcast::Receiver;
+    use tokio_stream::wrappers::ReceiverStream;
     use tonic::transport::Channel;
 
     const FULL_UPDATE_VERSION: i64 = 1;
@@ -256,6 +272,7 @@ mod tests {
                                 r#type: RangeType::Primary as i32,
                             }],
                             replication_mapping: vec![],
+                            desired_applied_epoch: vec![],
                         },
                     )),
                 },
@@ -274,6 +291,7 @@ mod tests {
                             load_mapping: vec![],
                             unload_mapping: vec![],
                             unload: vec![],
+                            desired_applied_epoch: vec![],
                         },
                     )),
                 },
@@ -305,6 +323,7 @@ mod tests {
         fn register_range_server(
             &self,
             _: common::host_info::HostInfo,
+            _: Pin<Box<dyn Stream<Item = Result<RangeServerRequest, Status>> + Send>>,
         ) -> Result<Receiver<i64>, Status> {
             Ok(self.update_sender.subscribe())
         }
@@ -341,17 +360,22 @@ mod tests {
         let mut client = WardenClient::new(channel);
 
         // Call register_range_server
-        let request = tonic::Request::new(RegisterRangeServerRequest {
-            range_server: Some(proto::warden::HostInfo {
-                identity: "test_server".to_string(),
-                zone: "test_zone".to_string(),
-                epoch: 1,
-            }),
-        });
+        let register_msg = RangeServerRequest {
+            request: Some(range_server_request::Request::Register(
+                RegisterRangeServerRequest {
+                    range_server: Some(proto::warden::HostInfo {
+                        identity: "test_server".to_string(),
+                        zone: "test_zone".to_string(),
+                        epoch: 1,
+                    }),
+                },
+            )),
+        };
+        let (send_tx, send_rx) = tokio::sync::mpsc::channel(100);
+        send_tx.send(register_msg).await.unwrap();
+        let request = tonic::Request::new(ReceiverStream::new(send_rx));
         let response = client.register_range_server(request).await.unwrap();
         let mut stream = response.into_inner();
-
-        fake_map_producer.send_full_update();
 
         // Verify that the client receives the full update
         let received_update = stream.message().await.unwrap().unwrap();

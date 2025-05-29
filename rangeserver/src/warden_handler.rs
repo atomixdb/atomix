@@ -1,30 +1,33 @@
-use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
-
 use common::full_range_id::{FullRangeId, FullRangeIdAndType};
 use common::keyspace_id::KeyspaceId;
 use common::range_type::RangeType;
 use common::replication_mapping::ReplicationMapping;
 use common::{config::Config, host_info::HostInfo};
+use proto::warden::loaded_range_status;
 use proto::warden::warden_client::WardenClient;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::ops::DerefMut;
+use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::RwLock;
+use tokio::sync::{mpsc, watch};
+use tokio_stream::wrappers::{ReceiverStream, WatchStream};
 use tokio_util::sync::CancellationToken;
-use tonic::Request;
+use tonic::{Request, Streaming};
+use tracing::error;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::epoch_supplier::EpochSupplier;
-
-type WardenErr = Box<dyn std::error::Error + Sync + Send + 'static>;
-struct StartedState {
-    stopper: CancellationToken,
-    assigned_ranges: RwLock<HashMap<FullRangeId, FullRangeIdAndType>>,
-    primary_range_id_to_replication_mappings: RwLock<HashMap<FullRangeId, Vec<ReplicationMapping>>>,
-}
+use crate::error::Error;
+use crate::range_manager::r#impl::RangeManager;
+use crate::range_manager::RangeManager as RangeManagerTrait;
+use crate::secondary_range_manager::r#impl::SecondaryRangeManager;
+use crate::secondary_range_manager::SecondaryRangeManager as SecondaryRangeManagerTrait;
+use crate::storage::Storage;
+use crate::wal::Wal;
 
 enum State {
     NotStarted,
@@ -36,6 +39,7 @@ pub enum WardenUpdate {
     LoadRange(FullRangeIdAndType),
     UnloadRange(FullRangeIdAndType),
     NewReplicationMapping(ReplicationMapping),
+    DesiredAppliedEpoch(KeyspaceId, u64),
 }
 
 pub struct WardenHandler {
@@ -43,6 +47,7 @@ pub struct WardenHandler {
     config: Config,
     host_info: HostInfo,
     epoch_supplier: Arc<dyn EpochSupplier>,
+    heartbeat_supplier: Arc<dyn HeartbeatSupplier>,
 }
 
 impl WardenHandler {
@@ -50,22 +55,14 @@ impl WardenHandler {
         config: &Config,
         host_info: &HostInfo,
         epoch_supplier: Arc<dyn EpochSupplier>,
+        heartbeat_supplier: Arc<dyn HeartbeatSupplier>,
     ) -> WardenHandler {
         WardenHandler {
             state: RwLock::new(State::NotStarted),
             config: config.clone(),
             host_info: host_info.clone(),
             epoch_supplier,
-        }
-    }
-
-    fn full_range_id_from_proto(proto_range_id: &proto::warden::RangeId) -> FullRangeId {
-        let keyspace_id = Uuid::from_str(proto_range_id.keyspace_id.as_str()).unwrap();
-        let keyspace_id = KeyspaceId::new(keyspace_id);
-        let range_id = Uuid::from_str(proto_range_id.range_id.as_str()).unwrap();
-        FullRangeId {
-            keyspace_id,
-            range_id,
+            heartbeat_supplier,
         }
     }
 
@@ -73,7 +70,7 @@ impl WardenHandler {
         proto_range_id_and_type: &proto::warden::RangeIdAndType,
     ) -> FullRangeIdAndType {
         let proto_range_id = proto_range_id_and_type.range.as_ref().unwrap();
-        let full_range_id = Self::full_range_id_from_proto(proto_range_id);
+        let full_range_id: FullRangeId = proto_range_id.into();
         let range_type = match proto_range_id_and_type.r#type() {
             proto::warden::RangeType::Primary => RangeType::Primary,
             proto::warden::RangeType::Secondary => RangeType::Secondary,
@@ -81,18 +78,6 @@ impl WardenHandler {
         FullRangeIdAndType {
             full_range_id,
             range_type,
-        }
-    }
-
-    fn replication_mapping_from_proto(
-        proto_replication_mapping: &proto::warden::ReplicationMapping,
-    ) -> ReplicationMapping {
-        let primary_range = proto_replication_mapping.primary_range.as_ref().unwrap();
-        let secondary_range = proto_replication_mapping.secondary_range.as_ref().unwrap();
-        ReplicationMapping {
-            primary_range: Self::full_range_id_from_proto(primary_range),
-            secondary_range: Self::full_range_id_from_proto(secondary_range),
-            assignee: proto_replication_mapping.assignee.clone(),
         }
     }
 
@@ -132,10 +117,10 @@ impl WardenHandler {
                     }
                 }
 
-                // TODO: Replication mappings for our assigned primary ranges.
+                // Replication mappings for our assigned primary ranges.
                 // First, add the RMs to the replication mappings.
                 for proto_rm in &full_assignment.replication_mapping {
-                    let rm = Self::replication_mapping_from_proto(proto_rm);
+                    let rm: ReplicationMapping = proto_rm.into();
                     // Does this mapping already exist?
                     let rm_exists = primary_id_to_replication_mappings
                         .contains_key(&rm.primary_range)
@@ -159,6 +144,16 @@ impl WardenHandler {
                 }
 
                 // TODO(yanniszark): Find removed replication mappings
+
+                // Desired applied epochs.
+                for desired_applied_epoch in &full_assignment.desired_applied_epoch {
+                    updates_sender
+                        .send(WardenUpdate::DesiredAppliedEpoch(
+                            KeyspaceId::from_str(&desired_applied_epoch.keyspace_id).unwrap(),
+                            desired_applied_epoch.epoch,
+                        ))
+                        .unwrap();
+                }
 
                 assigned_ranges.clear();
                 assigned_ranges.clone_from(&new_assignment);
@@ -193,22 +188,35 @@ impl WardenHandler {
         updates_sender: mpsc::UnboundedSender<WardenUpdate>,
         state: Arc<StartedState>,
         epoch_supplier: Arc<dyn EpochSupplier>,
+        heartbeat_supplier: Arc<dyn HeartbeatSupplier>,
     ) -> Result<(), WardenErr> {
         let addr = format!("http://{}", config.warden_address.clone());
         let epoch = epoch_supplier.read_epoch().await?;
         let mut client = WardenClient::connect(addr).await?;
-        let registration_request = proto::warden::RegisterRangeServerRequest {
-            range_server: Some(proto::warden::HostInfo {
-                identity: host_info.identity.name.clone(),
-                zone: host_info.identity.zone.name.clone(),
-                epoch,
-            }),
+        let registration_request = proto::warden::RangeServerRequest {
+            request: Some(proto::warden::range_server_request::Request::Register(
+                proto::warden::RegisterRangeServerRequest {
+                    range_server: Some(proto::warden::HostInfo {
+                        identity: host_info.identity.name.clone(),
+                        zone: host_info.identity.zone.name.clone(),
+                        epoch,
+                    }),
+                },
+            )),
         };
+        // TODO(yanniszark): Ensure that we don't queue up too many messages.
+        let (send_tx, send_rx) = mpsc::channel(2);
+        send_tx.send(registration_request).await.unwrap();
+        let stream = ReceiverStream::new(send_rx);
         let mut stream = client
-            .register_range_server(Request::new(registration_request))
+            .register_range_server(Request::new(stream))
             .await?
             .into_inner();
 
+        // TODO(yanniszark): Make this configurable.
+        let mut heartbeat_ticker = tokio::time::interval(tokio::time::Duration::from_secs(1));
+        heartbeat_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let heartbeat_sender = send_tx;
         loop {
             tokio::select! {
                 () = state.stopper.cancelled() => return Ok(()),
@@ -229,7 +237,30 @@ impl WardenHandler {
                         }
                     }
                 }
-
+                _ = heartbeat_ticker.tick() => {
+                    let heartbeat = heartbeat_supplier.get_heartbeat().await;
+                    info!("Sending heartbeat");
+                    // Print the heartbeat statuses.
+                    for range_status in heartbeat.range_status.iter() {
+                        match &range_status.status {
+                            Some(proto::warden::loaded_range_status::Status::Primary(primary_range_status)) => {
+                                info!("Primary range status: range_id={:?}", primary_range_status.range_id);
+                            }
+                            Some(proto::warden::loaded_range_status::Status::Secondary(secondary_range_status)) => {
+                                info!("Secondary range status: range_id={:?}, wal_epoch={:?}, applied_epoch={:?}",
+                                    secondary_range_status.range_id,
+                                    secondary_range_status.wal_epoch,
+                                    secondary_range_status.applied_epoch);
+                            }
+                            None => {
+                                info!("Range status: unknown");
+                            }
+                        }
+                    }
+                    heartbeat_sender.send(proto::warden::RangeServerRequest {
+                        request: Some(proto::warden::range_server_request::Request::Heartbeat(heartbeat)),
+                    }).await.unwrap();
+                }
             }
         }
     }
@@ -240,6 +271,7 @@ impl WardenHandler {
         updates_sender: mpsc::UnboundedSender<WardenUpdate>,
         state: Arc<StartedState>,
         epoch_supplier: Arc<dyn EpochSupplier>,
+        heartbeat_supplier: Arc<dyn HeartbeatSupplier>,
     ) -> Result<(), WardenErr> {
         loop {
             match Self::continuously_connect_and_register_inner(
@@ -248,6 +280,7 @@ impl WardenHandler {
                 updates_sender.clone(),
                 state.clone(),
                 epoch_supplier.clone(),
+                heartbeat_supplier.clone(),
             )
             .await
             {
@@ -287,6 +320,7 @@ impl WardenHandler {
                     *state = State::Started(started_state.clone());
                     drop(state);
                     let ec_clone = self.epoch_supplier.clone();
+                    let heartbeat_supplier_clone = self.heartbeat_supplier.clone();
                     let _ = tokio::spawn(async move {
                         let exit_result = Self::continuously_connect_and_register(
                             host_info,
@@ -294,6 +328,7 @@ impl WardenHandler {
                             updates_sender,
                             started_state,
                             ec_clone,
+                            heartbeat_supplier_clone,
                         )
                         .await;
                         done_tx.send(exit_result).unwrap();
@@ -325,4 +360,85 @@ impl WardenHandler {
             }
         }
     }
+}
+
+#[async_trait::async_trait]
+pub trait HeartbeatSupplier: Send + Sync + 'static {
+    async fn get_heartbeat(&self) -> proto::warden::Heartbeat;
+}
+
+pub struct HeartbeatSupplierImpl<S, W>
+where
+    S: Storage,
+    W: Wal,
+{
+    loaded_ranges: Arc<RwLock<HashMap<Uuid, Arc<RangeManager<S, W>>>>>,
+    secondary_loaded_ranges: Arc<RwLock<HashMap<Uuid, Arc<SecondaryRangeManager<S, W>>>>>,
+}
+
+impl<S, W> HeartbeatSupplierImpl<S, W>
+where
+    S: Storage,
+    W: Wal,
+{
+    pub fn new(
+        loaded_ranges: Arc<RwLock<HashMap<Uuid, Arc<RangeManager<S, W>>>>>,
+        secondary_loaded_ranges: Arc<RwLock<HashMap<Uuid, Arc<SecondaryRangeManager<S, W>>>>>,
+    ) -> Self {
+        Self {
+            loaded_ranges,
+            secondary_loaded_ranges,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl<S, W> HeartbeatSupplier for HeartbeatSupplierImpl<S, W>
+where
+    S: Storage,
+    W: Wal,
+{
+    async fn get_heartbeat(&self) -> proto::warden::Heartbeat {
+        let mut ranges_statuses: Vec<proto::warden::LoadedRangeStatus> = Vec::new();
+        {
+            let loaded_ranges = self.loaded_ranges.read().await;
+            for (range_id, range_manager) in loaded_ranges.deref() {
+                // Check if the range is loaded, else continue.
+                let status = match range_manager.status().await {
+                    Ok(status) => status,
+                    Err(Error::RangeIsNotLoaded) => continue,
+                    Err(e) => {
+                        error!("Error getting status for range {}: {:?}", range_id, e);
+                        continue;
+                    }
+                };
+                ranges_statuses.push(proto::warden::LoadedRangeStatus {
+                    status: Some(loaded_range_status::Status::Primary(status)),
+                });
+            }
+        }
+        {
+            let secondary_loaded_ranges = self.secondary_loaded_ranges.read().await;
+            for (_, range_manager) in secondary_loaded_ranges.deref() {
+                // Check if the range is loaded, else continue.
+                let status = match range_manager.status().await {
+                    Ok(status) => status,
+                    Err(_) => continue,
+                };
+                ranges_statuses.push(proto::warden::LoadedRangeStatus {
+                    status: Some(loaded_range_status::Status::Secondary(status)),
+                });
+            }
+        }
+        proto::warden::Heartbeat {
+            range_status: ranges_statuses,
+        }
+    }
+}
+
+type WardenErr = Box<dyn std::error::Error + Sync + Send + 'static>;
+struct StartedState {
+    stopper: CancellationToken,
+    assigned_ranges: RwLock<HashMap<FullRangeId, FullRangeIdAndType>>,
+    primary_range_id_to_replication_mappings: RwLock<HashMap<FullRangeId, Vec<ReplicationMapping>>>,
 }

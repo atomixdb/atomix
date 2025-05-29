@@ -1,5 +1,7 @@
+use std::collections::hash_map::Entry;
 use std::collections::{BinaryHeap, HashMap};
 use std::ops::Add;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashSet, ops::Deref, sync::Mutex};
@@ -14,16 +16,21 @@ use common::region::Region;
 use common::replication_mapping::ReplicationMapping;
 use proto::universe::universe_client::UniverseClient;
 use proto::universe::{KeyspaceInfo, ListKeyspacesRequest};
-use proto::warden::{FullAssignment, WardenUpdate};
+use proto::warden::{range_server_request, FullAssignment, RangeServerRequest, WardenUpdate};
 use std::cmp::{Ordering, Reverse};
 use std::hash::{Hash, Hasher};
-use tokio::sync::broadcast::{channel, Receiver, Sender};
+use std::sync::RwLock;
+use tokio::sync::broadcast;
+use tokio::sync::broadcast::{channel, Sender};
+use tokio::sync::mpsc;
+use tokio_stream::Stream;
 use tokio_util::sync::CancellationToken;
-use tonic::Status;
+use tonic::{Status, Streaming};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::persistence::{Persistence, RangeAssignment, RangeInfo};
+use crate::stream_multiplexer::StreamMultiplexer;
 
 // TODO(purujit): Convert these to configuration.
 const MIN_NUM_RANGE_SERVERS: usize = 1;
@@ -69,7 +76,11 @@ impl Hash for HostInfoWrapper {
 }
 
 pub trait AssignmentComputation {
-    fn register_range_server(&self, host_info: HostInfo) -> Result<Receiver<i64>, Status>;
+    fn register_range_server(
+        &self,
+        host_info: HostInfo,
+        heartbeat_stream: Pin<Box<dyn Stream<Item = Result<RangeServerRequest, Status>> + Send>>,
+    ) -> Result<broadcast::Receiver<i64>, Status>;
     fn notify_range_server_unavailable(&self, host_info: HostInfo);
     fn get_assignment_update(
         &self,
@@ -79,11 +90,121 @@ pub trait AssignmentComputation {
     ) -> Option<WardenUpdate>;
 }
 
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "test_access", pub_fields::pub_fields)]
+struct PrimaryRangeStatus {
+    range_id: FullRangeId,
+    leader_sequence_number: u64,
+    host_info: HostInfo,
+}
+
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "test_access", pub_fields::pub_fields)]
+struct SecondaryRangeStatus {
+    range_id: FullRangeId,
+    leader_sequence_number: u64,
+    host_info: HostInfo,
+    wal_epoch: Option<u64>,
+    applied_epoch: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+pub enum LoadedRangeStatus {
+    Primary(PrimaryRangeStatus),
+    Secondary(SecondaryRangeStatus),
+}
+
+impl LoadedRangeStatus {
+    fn range_id(&self) -> &FullRangeId {
+        match self {
+            LoadedRangeStatus::Primary(primary) => &primary.range_id,
+            LoadedRangeStatus::Secondary(secondary) => &secondary.range_id,
+        }
+    }
+
+    fn host_info(&self) -> &HostInfo {
+        match self {
+            LoadedRangeStatus::Primary(primary) => &primary.host_info,
+            LoadedRangeStatus::Secondary(secondary) => &secondary.host_info,
+        }
+    }
+
+    fn leader_sequence_number(&self) -> u64 {
+        match self {
+            LoadedRangeStatus::Primary(primary) => primary.leader_sequence_number,
+            LoadedRangeStatus::Secondary(secondary) => secondary.leader_sequence_number,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RangeStatus {
+    Loaded(LoadedRangeStatus),
+    Unknown,
+}
+
+impl RangeStatus {
+    fn is_loaded(&self) -> bool {
+        match self {
+            RangeStatus::Loaded(_) => true,
+            RangeStatus::Unknown => false,
+        }
+    }
+
+    fn to_loaded(&self) -> &LoadedRangeStatus {
+        match self {
+            RangeStatus::Loaded(loaded) => loaded,
+            RangeStatus::Unknown => panic!("Range status is unknown"),
+        }
+    }
+}
+
+impl LoadedRangeStatus {
+    fn from_proto(status: &proto::warden::LoadedRangeStatus, host_info: HostInfo) -> Self {
+        match status.status.as_ref().unwrap() {
+            proto::warden::loaded_range_status::Status::Primary(primary_proto) => {
+                LoadedRangeStatus::Primary(PrimaryRangeStatus {
+                    range_id: primary_proto.range_id.as_ref().unwrap().into(),
+                    leader_sequence_number: primary_proto.leader_sequence_number,
+                    host_info,
+                })
+            }
+            proto::warden::loaded_range_status::Status::Secondary(secondary_proto) => {
+                LoadedRangeStatus::Secondary(SecondaryRangeStatus {
+                    range_id: secondary_proto.range_id.as_ref().unwrap().into(),
+                    leader_sequence_number: secondary_proto.leader_sequence_number,
+                    host_info,
+                    wal_epoch: secondary_proto.wal_epoch,
+                    applied_epoch: secondary_proto.applied_epoch,
+                })
+            }
+        }
+    }
+}
+
+impl RangeStatus {
+    fn should_update(&self, new_status: &RangeStatus) -> bool {
+        match self {
+            RangeStatus::Loaded(loaded) => match new_status {
+                RangeStatus::Loaded(new_loaded) => {
+                    loaded.leader_sequence_number() <= new_loaded.leader_sequence_number()
+                }
+                RangeStatus::Unknown => false,
+            },
+            RangeStatus::Unknown => false,
+        }
+    }
+}
+
+#[cfg_attr(feature = "test_access", pub_fields::pub_fields)]
 pub struct AssignmentComputationImpl {
     base_ranges: Mutex<Vec<RangeInfo>>,
     universe_client: UniverseClient<tonic::transport::Channel>,
     region: Region,
     range_assignments: Mutex<HashMap<i64, Vec<RangeAssignment>>>,
+    desired_applied_epochs: Mutex<HashMap<KeyspaceId, u64>>,
+    range_statuses: RwLock<HashMap<FullRangeId, RangeStatus>>,
+    heartbeats_stream_mux: StreamMultiplexer,
     replication_mappings: Mutex<Vec<ReplicationMapping>>,
     current_version: Mutex<i64>,
     ready_range_servers: Mutex<HashSet<HostInfoWrapper>>,
@@ -95,6 +216,7 @@ pub struct AssignmentComputationImpl {
 impl AssignmentComputationImpl {
     pub async fn new(
         universe_client: UniverseClient<tonic::transport::Channel>,
+        heartbeats_stream_mux: StreamMultiplexer,
         region: Region,
         persistence: Arc<dyn Persistence + Send + Sync + 'static>,
     ) -> Arc<Self> {
@@ -103,6 +225,9 @@ impl AssignmentComputationImpl {
             universe_client,
             region,
             range_assignments: Mutex::new(HashMap::new()),
+            desired_applied_epochs: Mutex::new(HashMap::new()),
+            range_statuses: RwLock::new(HashMap::new()),
+            heartbeats_stream_mux,
             replication_mappings: Mutex::new(vec![]),
             // TODO(purujit): Use a better sequence generator for version.
             current_version: Mutex::new(
@@ -122,19 +247,192 @@ impl AssignmentComputationImpl {
 
     pub fn start_computation(
         self: Arc<Self>,
+        heartbeat_receiver: mpsc::Receiver<(HostInfo, RangeServerRequest)>,
         runtime: tokio::runtime::Handle,
         cancellation_token: CancellationToken,
     ) {
+        let child_token = cancellation_token.child_token();
+        let self_clone = self.clone();
         runtime.spawn(async move {
             tokio::select! {
-                _ = cancellation_token.cancelled() => {
+                _ = child_token.cancelled() => {
                     info!("Cancellation token triggered. Exiting assignment computation loop.")
                 }
-                _ = Self::assignment_computation_loop(self.clone()) => {
+                _ = Self::assignment_computation_loop(self_clone) => {
                     info!("Assignment computation loop exited.")
                 }
             }
         });
+
+        let child_token = cancellation_token.child_token();
+        let self_clone = self.clone();
+        runtime.spawn(async move {
+            tokio::select! {
+                _ = child_token.cancelled() => {
+                    info!("Cancellation token triggered. Exiting heartbeat receiver loop.");
+                }
+                _ = Self::heartbeat_handler(self_clone, heartbeat_receiver) => {
+                    info!("Heartbeat handler exited.");
+                }
+            }
+        });
+    }
+
+    async fn heartbeat_handler(
+        self: Arc<Self>,
+        // TODO(yanniszark): Pass the host info in the heartbeat receiver.
+        mut heartbeat_receiver: mpsc::Receiver<(HostInfo, RangeServerRequest)>,
+    ) {
+        loop {
+            match heartbeat_receiver.recv().await {
+                Some((
+                    host_info,
+                    RangeServerRequest {
+                        request: Some(range_server_request::Request::Heartbeat(heartbeat)),
+                    },
+                )) => {
+                    info!("Heartbeat received. Updating assignment computation.");
+                    // Compute the previous ranges for this host.
+                    let mut new_range_statuses = Vec::new();
+                    for range_status in heartbeat.range_status.iter() {
+                        new_range_statuses.push(LoadedRangeStatus::from_proto(
+                            range_status,
+                            host_info.clone(),
+                        ));
+                    }
+                    let mut previous_ranges = HashSet::new();
+                    {
+                        let range_statuses = self.range_statuses.read().unwrap();
+                        for (range_id, range_status) in range_statuses.iter() {
+                            if let RangeStatus::Loaded(loaded_range_status) = range_status {
+                                if loaded_range_status.host_info() == &host_info {
+                                    previous_ranges.insert(range_id.clone());
+                                }
+                            }
+                        }
+                    }
+                    // Compute the statuses received in the heartbeat.
+                    let mut new_ranges = HashSet::new();
+                    for range_status in new_range_statuses.iter() {
+                        new_ranges.insert(range_status.range_id().clone());
+                    }
+
+                    // Compute the removed ranges.
+                    let removed_ranges = previous_ranges.difference(&new_ranges);
+
+                    // Lock the range statuses and update them.
+                    // NOTE: This code assumes that the handler is
+                    // the sole writer of the range statuses. Otherwise we need
+                    // to compute the previous set of ranges under the write
+                    // lock.
+                    let mut range_statuses = self.range_statuses.write().unwrap();
+
+                    for range_id in removed_ranges {
+                        *range_statuses.get_mut(range_id).unwrap() = RangeStatus::Unknown;
+                    }
+                    for range_status in new_range_statuses {
+                        let range_id = range_status.range_id().clone();
+                        let new_range_status = RangeStatus::Loaded(range_status);
+                        match range_statuses.entry(range_id) {
+                            Entry::Occupied(mut entry) => {
+                                if entry.get().should_update(&new_range_status) {
+                                    entry.insert(new_range_status);
+                                } else {
+                                    info!("Range status for range {:?} is not updated.", range_id);
+                                }
+                            }
+                            Entry::Vacant(entry) => {
+                                entry.insert(new_range_status);
+                            }
+                        }
+                    }
+                    // Print all the range statuses.
+                    for (range_id, range_status) in range_statuses.iter() {
+                        match range_status {
+                            RangeStatus::Loaded(loaded_range_status) => match loaded_range_status {
+                                LoadedRangeStatus::Primary(_) => {
+                                    info!("Range status for range {}: primary", range_id.range_id);
+                                }
+                                LoadedRangeStatus::Secondary(secondary_range_status) => {
+                                    info!("Range status for range {}: secondary, wal_epoch: {:?}, applied_epoch: {:?}",
+                                    range_id.range_id, secondary_range_status.wal_epoch, secondary_range_status.applied_epoch);
+                                }
+                            },
+                            RangeStatus::Unknown => {
+                                info!("Range status for range {:?}: unknown", range_id);
+                            }
+                        }
+                    }
+                }
+                Some(unexpected) => {
+                    error!("Received unexpected request: {:?}", unexpected);
+                    break;
+                }
+                None => {
+                    error!("Heartbeat receiver closed. Exiting heartbeat handler.");
+                    break;
+                }
+            }
+        }
+    }
+
+    fn calculate_desired_applied_epochs(
+        range_statuses: &HashMap<FullRangeId, RangeStatus>,
+        base_ranges: &Vec<RangeInfo>,
+    ) -> HashMap<KeyspaceId, u64> {
+        // 1. Get all keyspaces.
+        // 2. For each keyspace, get all ranges.
+        // 3. Calculate the minimum wal epoch across all ranges of the keyspace.
+        let mut desired_applied_epochs = HashMap::new();
+        let keyspaces: Vec<KeyspaceId> = base_ranges.iter().map(|r| r.keyspace_id).collect();
+        for keyspace in keyspaces.iter() {
+            let ranges: Vec<FullRangeId> = base_ranges
+                .iter()
+                .filter(|r| r.keyspace_id == *keyspace && r.range_type == RangeType::Secondary)
+                .map(|r| FullRangeId {
+                    keyspace_id: r.keyspace_id,
+                    range_id: r.id,
+                })
+                .collect();
+            let mut range_statuses: Vec<&RangeStatus> = ranges
+                .iter()
+                .filter_map(|r| range_statuses.get(r))
+                .filter(|r| r.is_loaded())
+                .collect();
+            if range_statuses.len() != ranges.len() {
+                warn!(
+                    "Range statuses for keyspace {:?} are not complete.",
+                    keyspace
+                );
+                continue;
+            }
+
+            let mut min_wal_epoch: Option<u64> = None;
+            for range_status in range_statuses.iter() {
+                let wal_epoch = match range_status {
+                    RangeStatus::Loaded(LoadedRangeStatus::Secondary(s)) => s.wal_epoch,
+                    _ => panic!("Unexpected range status: {:?}", range_status),
+                };
+                match wal_epoch {
+                    Some(wal_epoch) => {
+                        if min_wal_epoch.is_none() || wal_epoch < min_wal_epoch.unwrap() {
+                            min_wal_epoch = Some(wal_epoch);
+                        }
+                    }
+                    None => {
+                        min_wal_epoch = None;
+                        break;
+                    }
+                }
+            }
+            match min_wal_epoch {
+                Some(min_wal_epoch) => {
+                    desired_applied_epochs.insert(*keyspace, min_wal_epoch);
+                }
+                None => {}
+            }
+        }
+        desired_applied_epochs
     }
 
     pub async fn read_base_ranges(&self) -> Result<(), tonic::Status> {
@@ -229,39 +527,10 @@ impl AssignmentComputationImpl {
         // For each primary range that belongs to us:
         // 1. Get the secondary range for that primary range for each secondary zone.
         // 2. Create a new ReplicationMapping for each secondary range.
+        // The assignment computation will update the assignees for the replication mappings.
         let mut replication_mappings = Vec::new();
         for key_space in key_spaces.iter() {
-            let mut rms = replication_mappings_from_keyspace(key_space);
-            if rms.is_empty() {
-                continue;
-            }
-            // Get the range assignments for the keyspace
-            let keyspace_id = KeyspaceId {
-                id: Uuid::parse_str(&key_space.keyspace_id)
-                    .map_err(|e| tonic::Status::internal(e.to_string()))?,
-            };
-            let range_map = self.persistence.get_keyspace_range_map(&keyspace_id).await;
-
-            // TODO(yanniszark): Cache the assignees from previous calls.
-            // Get the assignee for each replication mapping
-            if let Ok(mut range_map) = range_map {
-                for rm in rms.iter_mut() {
-                    // Find the assignment for the primary range
-                    if let Some(assignment) = range_map
-                        .iter_mut()
-                        .find(|a| a.range.id == rm.secondary_range.range_id)
-                    {
-                        rm.assignee = assignment.assignee.clone();
-                    }
-                }
-            } else {
-                error!(
-                    "Failed to get keyspace range map: {:?}",
-                    range_map.err().unwrap()
-                );
-            }
-            // Filter out the replication mappings with no assignee.
-            rms.retain(|rm| !rm.assignee.is_empty());
+            let rms = replication_mappings_from_keyspace(key_space);
             replication_mappings.extend(rms);
         }
         *self.replication_mappings.lock().unwrap() = replication_mappings;
@@ -322,6 +591,46 @@ impl AssignmentComputationImpl {
             return new_ready_servers;
         }
 
+        // Send updates for the desired applied epochs.
+        // I currently don't bump the version here because desired epoch
+        // updates are very frequent and don't change the range assignment.
+        // TODO(yanniszark): Find a better way to do this incrementally.
+        let current_version = *self.current_version.lock().unwrap();
+        let range_assignment_exists = self
+            .range_assignments
+            .lock()
+            .unwrap()
+            .contains_key(&current_version);
+        if range_assignment_exists {
+            let base_ranges = self.base_ranges.lock().unwrap();
+            let range_statuses = self.range_statuses.read().unwrap();
+            let new_desired_applied_epochs =
+                Self::calculate_desired_applied_epochs(&range_statuses, &base_ranges);
+            let mut desired_applied_epochs = self.desired_applied_epochs.lock().unwrap();
+            let mut send_update = false;
+            // Print all the desired applied epochs.
+            for (keyspace, epoch) in desired_applied_epochs.iter() {
+                info!(
+                    "Desired applied epoch for keyspace {:?}: {:?}",
+                    keyspace, epoch
+                );
+            }
+            for (keyspace, epoch) in new_desired_applied_epochs.iter() {
+                if !desired_applied_epochs.contains_key(keyspace)
+                    || desired_applied_epochs.get(keyspace).unwrap() != epoch
+                {
+                    desired_applied_epochs.insert(*keyspace, *epoch);
+                    send_update = true;
+                }
+            }
+            if send_update && range_assignment_exists {
+                info!("Sending desired applied epochs update.");
+                self.assignment_update_sender.send(current_version).unwrap();
+            } else {
+                info!("No desired applied epochs to send.");
+            }
+        }
+
         let added_servers: Vec<_> = new_ready_servers.difference(&prev_ready_servers).collect();
         let removed_servers: Vec<_> = prev_ready_servers.difference(&new_ready_servers).collect();
         if added_servers.len() == 0
@@ -332,7 +641,7 @@ impl AssignmentComputationImpl {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             return new_ready_servers;
         }
-        debug!(
+        info!(
             "Added servers: {:?}, removed servers: {:?}.",
             added_servers, removed_servers
         );
@@ -432,10 +741,24 @@ impl AssignmentComputationImpl {
                 }
             }
             *current_version = new_version;
-            debug!(
+            info!(
                 "Range assignments at version {:?}: {:?}.",
                 new_version, new_range_assignments
             );
+            // Update the replication mappings with the new assignments.
+            {
+                let mut rms = self.replication_mappings.lock().unwrap();
+                for rm in rms.iter_mut() {
+                    // TODO(yanniszark): Switch to a map lookup.
+                    if let Some(assignment) = new_range_assignments
+                        .iter()
+                        .find(|a| a.range.id == rm.secondary_range.range_id)
+                    {
+                        rm.assignee = assignment.assignee.clone();
+                    }
+                }
+                rms.retain(|rm| !rm.assignee.is_empty());
+            }
             let send_result = self.assignment_update_sender.send(new_version);
             match send_result {
                 Ok(num_receivers) => {
@@ -489,12 +812,18 @@ fn replication_mappings_from_keyspace(keyspace: &KeyspaceInfo) -> Vec<Replicatio
 }
 
 impl AssignmentComputation for AssignmentComputationImpl {
-    fn register_range_server(&self, host_info: HostInfo) -> Result<Receiver<i64>, Status> {
+    fn register_range_server(
+        &self,
+        host_info: HostInfo,
+        heartbeat_stream: Pin<Box<dyn Stream<Item = Result<RangeServerRequest, Status>> + Send>>,
+    ) -> Result<broadcast::Receiver<i64>, Status> {
         info!("Registering range server: {:?}.", host_info);
         // Note that if this is a re-registration, the old receiver will
         // eventually be dropped when the gRPC stream for the old connection is
         // closed. gRPC will detect the disconnect when it tries to send an
         // update on the old connection.
+        self.heartbeats_stream_mux
+            .add_stream(host_info.clone(), heartbeat_stream);
         let mut ready_servers = self.ready_range_servers.lock().unwrap();
         if let Some(existing) = ready_servers.get(&HostInfoWrapper(host_info.clone())) {
             if existing.0.warden_connection_epoch >= host_info.warden_connection_epoch {
@@ -517,7 +846,7 @@ impl AssignmentComputation for AssignmentComputationImpl {
     ) -> Option<WardenUpdate> {
         if !full_update {
             // TODO(purujit): Implement incremental updates.
-            warn!("Incremental update not implemented yet.");
+            todo!("Incremental update not implemented yet.");
         }
         match self.range_assignments.lock().unwrap().get(&version) {
             Some(range_assignments) => {
@@ -532,6 +861,17 @@ impl AssignmentComputation for AssignmentComputationImpl {
                         r#type: r.range.range_type.into(),
                     })
                     .collect();
+                let mut desired_applied_epochs_vec: Vec<proto::warden::DesiredAppliedEpoch> =
+                    vec![];
+                {
+                    let desired_applied_epochs = self.desired_applied_epochs.lock().unwrap();
+                    for (keyspace, epoch) in desired_applied_epochs.iter() {
+                        desired_applied_epochs_vec.push(proto::warden::DesiredAppliedEpoch {
+                            keyspace_id: keyspace.id.to_string(),
+                            epoch: *epoch,
+                        });
+                    }
+                }
                 let update = WardenUpdate {
                     update: Some(proto::warden::warden_update::Update::FullAssignment(
                         FullAssignment {
@@ -554,6 +894,8 @@ impl AssignmentComputation for AssignmentComputationImpl {
                                     assignee: r.assignee.clone(),
                                 })
                                 .collect(),
+                            // TODO(yanniszark): Implement this.
+                            desired_applied_epoch: desired_applied_epochs_vec,
                         },
                     )),
                 };
@@ -573,6 +915,9 @@ impl AssignmentComputation for AssignmentComputationImpl {
     fn notify_range_server_unavailable(&self, host_info: HostInfo) {
         // TODO(purujit): Implement Quarantine.
         debug!("Notifying range server {:?} is unavailable.", host_info);
+
+        // TODO(yanniszark): Remove the server's range statuses.
+        self.heartbeats_stream_mux.remove_stream(&host_info);
 
         let mut ready_servers = self.ready_range_servers.lock().unwrap();
         if let Some(existing) = ready_servers.get(&HostInfoWrapper(host_info.clone())) {
@@ -601,13 +946,14 @@ mod tests {
     };
     use scylla::{Session, SessionBuilder};
     use tokio::sync::oneshot;
+    use tokio_stream::wrappers::ReceiverStream;
     use tonic::{Code, Request, Response};
     use uuid::Uuid;
 
     use crate::persistence::cassandra::Cassandra;
 
     use super::*;
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
     fn make_zone() -> Zone {
         Zone {
             region: Region {
@@ -628,6 +974,13 @@ mod tests {
             id: Uuid::new_v4(),
             range_type: RangeType::Primary,
         }
+    }
+
+    fn make_empty_heartbeat_stream(
+    ) -> Pin<Box<dyn Stream<Item = Result<RangeServerRequest, Status>> + Send>> {
+        let (tx, rx) = mpsc::channel(100);
+        Pin::new(Box::new(ReceiverStream::new(rx)))
+            as Pin<Box<dyn Stream<Item = Result<RangeServerRequest, Status>> + Send>>
     }
 
     struct MockUniverseService {
@@ -774,9 +1127,11 @@ mod tests {
                 .unwrap(),
         );
 
+        let (stream_mux, receiver) = StreamMultiplexer::new(100, RUNTIME.handle().clone());
         let persistence = Arc::new(Cassandra::new("127.0.0.1:9042".to_string()).await);
         let assignment_computation = AssignmentComputationImpl::new(
             client,
+            stream_mux,
             Region {
                 cloud: None,
                 name: "".to_string(),
@@ -811,8 +1166,12 @@ mod tests {
         let context = setup().await;
         let computation = context.assignment_computation.clone();
         let computation_clone = computation.clone();
-        computation_clone
-            .start_computation(RUNTIME.handle().clone(), context.cancellation_token.clone());
+        let (_, empty_heartbeat_receiver) = mpsc::channel(100);
+        computation_clone.start_computation(
+            empty_heartbeat_receiver,
+            RUNTIME.handle().clone(),
+            context.cancellation_token.clone(),
+        );
 
         // TODO(purujit): For some reason, doing this in the `drop` method of the TestContext does not work. The test exits before
         // the tasks spawned by the drop function are completed.
@@ -1091,15 +1450,18 @@ mod tests {
             warden_connection_epoch: 1,
         };
 
-        let _ = computation.register_range_server(server.clone());
+        let empty_heartbeat_stream = make_empty_heartbeat_stream();
+        let _ = computation.register_range_server(server.clone(), empty_heartbeat_stream);
 
         {
             let ready_servers = computation.ready_range_servers.lock().unwrap();
             assert!(ready_servers.contains(&HostInfoWrapper(server.clone())));
         }
+        // Try to register the same server again
+        let empty_heartbeat_stream = make_empty_heartbeat_stream();
         assert_eq!(
             computation
-                .register_range_server(server.clone())
+                .register_range_server(server.clone(), empty_heartbeat_stream)
                 .err()
                 .unwrap()
                 .code(),
@@ -1121,7 +1483,8 @@ mod tests {
             warden_connection_epoch: 1,
         };
 
-        let _ = computation.register_range_server(server.clone());
+        let empty_heartbeat_stream = make_empty_heartbeat_stream();
+        let _ = computation.register_range_server(server.clone(), empty_heartbeat_stream);
         {
             let ready_servers = computation.ready_range_servers.lock().unwrap();
             assert!(ready_servers.contains(&HostInfoWrapper(server.clone())));
@@ -1143,7 +1506,8 @@ mod tests {
             warden_connection_epoch: 2,
         };
 
-        let _ = computation.register_range_server(server.clone());
+        let empty_heartbeat_stream = make_empty_heartbeat_stream();
+        let _ = computation.register_range_server(server.clone(), empty_heartbeat_stream);
         {
             let ready_servers = computation.ready_range_servers.lock().unwrap();
             assert!(ready_servers.contains(&HostInfoWrapper(server.clone())));

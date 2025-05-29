@@ -8,7 +8,6 @@ use flatbuffers::FlatBufferBuilder;
 use prost::Message;
 use proto::rangeserver::ReplicateDataRequest;
 use tokio::sync::Mutex;
-use tracing::info;
 
 pub struct InMemoryWal {
     state: Mutex<State>,
@@ -21,12 +20,13 @@ struct State {
 }
 
 impl State {
-    fn append_data_currently_in_builder(&mut self) -> Result<(), Error> {
+    /// Returns the offset of the data that was appended.
+    fn append_data_currently_in_builder(&mut self) -> Result<u64, Error> {
         let bytes = self.flatbuf_builder.finished_data();
         let buf = Vec::from(bytes);
         self.entries.push_back(buf);
         self.flatbuf_builder.reset();
-        Ok(())
+        Ok(self.entries.len() as u64)
     }
 }
 
@@ -92,13 +92,28 @@ impl Wal for InMemoryWal {
         Ok(wal.first_offset)
     }
 
+    async fn last_offset(&self) -> Result<Option<u64>, Error> {
+        let wal = self.state.lock().await;
+        match wal.entries.is_empty() {
+            true => Ok(None),
+            false => Ok(Some(self.next_offset().await? - 1)),
+        }
+    }
+
     async fn next_offset(&self) -> Result<u64, Error> {
         let wal = self.state.lock().await;
         let len_u64 = wal.entries.len() as u64;
         Ok(wal.first_offset.unwrap_or(0) + len_u64)
     }
 
-    async fn append_prepare(&self, entry: PrepareRequest<'_>) -> Result<(), Error> {
+    async fn get_entry_at_offset(&self, offset: u64) -> Result<Vec<u8>, Error> {
+        let wal = self.state.lock().await;
+        let ind = (wal.first_offset.unwrap_or(0) + offset) as usize;
+        let entry = wal.entries.get(ind).ok_or(Error::EntryNotFound)?;
+        Ok(entry.clone())
+    }
+
+    async fn append_prepare(&self, entry: PrepareRequest<'_>) -> Result<u64, Error> {
         let mut state = self.state.lock().await;
         let prepare_bytes = state.flatbuf_builder.create_vector(entry._tab.buf());
         let fb_root = LogEntry::create(
@@ -112,7 +127,7 @@ impl Wal for InMemoryWal {
         state.append_data_currently_in_builder()
     }
 
-    async fn append_commit(&self, entry: CommitRequest<'_>) -> Result<(), Error> {
+    async fn append_commit(&self, entry: CommitRequest<'_>) -> Result<u64, Error> {
         let mut state = self.state.lock().await;
         let commit_bytes = state.flatbuf_builder.create_vector(entry._tab.buf());
         let fb_root = LogEntry::create(
@@ -126,7 +141,7 @@ impl Wal for InMemoryWal {
         state.append_data_currently_in_builder()
     }
 
-    async fn append_abort(&self, entry: AbortRequest<'_>) -> Result<(), Error> {
+    async fn append_abort(&self, entry: AbortRequest<'_>) -> Result<u64, Error> {
         let mut state = self.state.lock().await;
         let abort_bytes = state.flatbuf_builder.create_vector(entry._tab.buf());
         let fb_root = LogEntry::create(
@@ -140,7 +155,7 @@ impl Wal for InMemoryWal {
         state.append_data_currently_in_builder()
     }
 
-    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<(), Error> {
+    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<u64, Error> {
         let mut state = self.state.lock().await;
         let bytes = entry.encode_to_vec();
         let commit_bytes = state.flatbuf_builder.create_vector(&bytes);

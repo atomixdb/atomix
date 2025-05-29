@@ -32,6 +32,8 @@ CREATE TABLE range_leases (
   leader_sequence_number       bigint,
   epoch_lease                  epoch_range,
   safe_snapshot_epochs         epoch_range,
+  // Secondary-only fields
+  applied_secondary_offset     bigint,
   PRIMARY KEY  (range_id)
 ) WITH COMPACTION = {
     'class': 'org.apache.cassandra.db.compaction.LeveledCompactionStrategy'

@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use common::keyspace_id::KeyspaceId;
 use scylla::{
-    query::Query, statement::SerialConsistency, FromRow, FromUserType, IntoUserType, SerializeCql,
-    SerializeRow, Session, SessionBuilder,
+    frame::value::Value, query::Query, statement::SerialConsistency, FromRow, FromUserType,
+    IntoUserType, SerializeCql, SerializeRow, Session, SessionBuilder,
 };
 use tracing::info;
 use uuid::Uuid;
@@ -43,8 +43,8 @@ impl Cassandra {
 }
 
 static INSERT_INTO_RANGE_LEASE_QUERY: &str = r#"
-  INSERT INTO atomix.range_leases(range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO atomix.range_leases(range_id, range_type, key_lower_bound_inclusive, key_upper_bound_exclusive, leader_sequence_number, epoch_lease, safe_snapshot_epochs, applied_secondary_offset)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     IF NOT EXISTS
 "#;
 
@@ -169,6 +169,7 @@ impl Persistence for Cassandra {
                             lower_bound_inclusive: 0,
                             upper_bound_inclusive: 0,
                         },
+                        None::<i64>,
                     ),
                 )
                 .await
@@ -177,5 +178,46 @@ impl Persistence for Cassandra {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::Bytes;
+
+    static DELETE_RANGE_LEASE_QUERY: &str = r#"
+    DELETE FROM atomix.range_leases WHERE range_id = ?
+    "#;
+
+    #[tokio::test]
+    async fn test_insert_new_ranges() {
+        let cassandra = Cassandra::new("127.0.0.1:9042".to_string()).await;
+
+        let ranges = vec![RangeInfo {
+            keyspace_id: KeyspaceId { id: Uuid::new_v4() },
+            id: Uuid::new_v4(),
+            key_range: KeyRange {
+                lower_bound_inclusive: Some(Bytes::from("a")),
+                upper_bound_exclusive: Some(Bytes::from("z")),
+            },
+            range_type: RangeType::Primary,
+        }];
+
+        let result = cassandra.insert_new_ranges(&ranges).await;
+        if let Err(e) = result {
+            println!("Error inserting new ranges: {}", e);
+            panic!("Expected Ok(()), got error: {}", e);
+        }
+
+        // Now delete the range.
+        let mut query = Query::new(DELETE_RANGE_LEASE_QUERY);
+        query.set_serial_consistency(Some(SerialConsistency::Serial));
+        let result = cassandra
+            .session
+            .query(query, (ranges[0].id,))
+            .await
+            .map_err(|op| Error::InternalError(Arc::new(op)))
+            .unwrap();
     }
 }

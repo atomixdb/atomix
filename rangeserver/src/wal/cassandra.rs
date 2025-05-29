@@ -71,6 +71,11 @@ static APPEND_ENTRY_QUERY: &str = r#"
     VALUES (?, ?, ?, ?)
 "#;
 
+static GET_ENTRY_AT_OFFSET_QUERY: &str = r#"
+    SELECT content FROM atomix.wal
+      WHERE wal_id = ? and offset = ?
+"#;
+
 static RETRIEVE_LOG_ENTRY: &str = r#"
     SELECT * FROM atomix.wal
       WHERE wal_id = ? and offset = ? and write_id = ?
@@ -93,7 +98,7 @@ impl CassandraWal {
         }
     }
 
-    async fn append_entry(&self, entry_type: Entry, entry: &[u8]) -> Result<(), Error> {
+    async fn append_entry(&self, entry_type: Entry, entry: &[u8]) -> Result<u64, Error> {
         let mut state = self.state.write().await;
         match state.deref_mut() {
             State::NotSynced => Err(Error::NotSynced),
@@ -149,7 +154,7 @@ impl CassandraWal {
                     *state = State::NotSynced;
                     return Err(Error::NotSynced);
                 }
-                Ok(())
+                Ok(offset as u64)
             }
         }
     }
@@ -198,11 +203,56 @@ impl Wal for CassandraWal {
         }
     }
 
+    async fn last_offset(&self) -> Result<Option<u64>, Error> {
+        let state = self.state.read().await;
+        match state.deref() {
+            State::NotSynced => Err(Error::NotSynced),
+            State::Synced(log) => match log.first_offset {
+                None => Ok(None),
+                Some(_) => {
+                    let last_offset = log.next_offset - 1;
+                    Ok(Some(last_offset as u64))
+                }
+            },
+        }
+    }
+
     async fn next_offset(&self) -> Result<u64, Error> {
         let state = self.state.read().await;
         match state.deref() {
             State::NotSynced => Err(Error::NotSynced),
             State::Synced(log) => Ok(log.next_offset as u64),
+        }
+    }
+
+    async fn get_entry_at_offset(&self, offset: u64) -> Result<Vec<u8>, Error> {
+        let state = self.state.read().await;
+        match state.deref() {
+            State::NotSynced => Err(Error::NotSynced),
+            State::Synced(log) => {
+                let mut query = Query::new(GET_ENTRY_AT_OFFSET_QUERY);
+                query.set_serial_consistency(Some(SerialConsistency::Serial));
+                let rows = self
+                    .session
+                    .query(query, (self.wal_id, offset as i64))
+                    .await
+                    .map_err(scylla_query_error_to_wal_error)?
+                    .rows;
+                match rows {
+                    None => Err(Error::EntryNotFound),
+                    Some(mut rows) => {
+                        if rows.len() == 0 {
+                            return Err(Error::EntryNotFound);
+                        } else if rows.len() != 1 {
+                            panic!("found multiple rows for the same WAL metadata!");
+                        } else {
+                            let row = rows.pop().unwrap();
+                            let (content,) = row.into_typed::<(Vec<u8>,)>().unwrap();
+                            Ok(content)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -241,19 +291,19 @@ impl Wal for CassandraWal {
         self.sync().await
     }
 
-    async fn append_prepare(&self, entry: PrepareRequest<'_>) -> Result<(), Error> {
+    async fn append_prepare(&self, entry: PrepareRequest<'_>) -> Result<u64, Error> {
         self.append_entry(Entry::Prepare, entry._tab.buf()).await
     }
 
-    async fn append_abort(&self, entry: AbortRequest<'_>) -> Result<(), Error> {
+    async fn append_abort(&self, entry: AbortRequest<'_>) -> Result<u64, Error> {
         self.append_entry(Entry::Abort, entry._tab.buf()).await
     }
 
-    async fn append_commit(&self, entry: CommitRequest<'_>) -> Result<(), Error> {
+    async fn append_commit(&self, entry: CommitRequest<'_>) -> Result<u64, Error> {
         self.append_entry(Entry::Commit, entry._tab.buf()).await
     }
 
-    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<(), Error> {
+    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<u64, Error> {
         self.append_entry(Entry::ReplicatedCommit, entry.encode_to_vec().as_slice())
             .await
     }

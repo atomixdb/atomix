@@ -13,12 +13,38 @@ use uuid::Uuid;
 type EpochLease = (u64, u64);
 
 #[derive(Clone, Debug)]
-pub struct RangeInfo {
+pub struct CommonRangeInfo {
     pub id: Uuid,
     pub key_range: KeyRange,
     pub leader_sequence_number: u64,
     pub epoch_lease: EpochLease,
     pub range_type: RangeType,
+}
+
+pub enum RangeInfo {
+    Primary {
+        common: CommonRangeInfo,
+    },
+    Secondary {
+        common: CommonRangeInfo,
+        applied_secondary_wal_offset: Option<u64>,
+    },
+}
+
+impl RangeInfo {
+    pub fn common(&self) -> &CommonRangeInfo {
+        match self {
+            RangeInfo::Primary { common } => common,
+            RangeInfo::Secondary { common, .. } => common,
+        }
+    }
+
+    pub fn common_mut(&mut self) -> &mut CommonRangeInfo {
+        match self {
+            RangeInfo::Primary { common } => common,
+            RangeInfo::Secondary { common, .. } => common,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Error)]
@@ -38,10 +64,18 @@ pub trait Storage: Send + Sync + 'static {
         &self,
         range_id: FullRangeId,
     ) -> impl std::future::Future<Output = Result<RangeInfo, Error>> + Send;
+
     fn renew_epoch_lease(
         &self,
         range_id: FullRangeId,
         new_lease: EpochLease,
+        leader_sequence_number: u64,
+    ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
+
+    fn update_secondary_status(
+        &self,
+        range_id: FullRangeId,
+        applied_secondary_offset: Option<u64>,
         leader_sequence_number: u64,
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send;
 

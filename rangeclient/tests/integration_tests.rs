@@ -17,6 +17,7 @@ use common::{
     host_info::{HostIdentity, HostInfo},
     keyspace_id::KeyspaceId,
     network::{fast_network::FastNetwork, for_testing::udp_fast_network::UdpFastNetwork},
+    range_type::RangeType,
     record::Record,
     region::{Region, Zone},
     transaction_info::TransactionInfo,
@@ -185,7 +186,7 @@ async fn setup() -> TestContext {
     let proto_server_address = proto_server_listener.local_addr().unwrap();
     let cancellation_token = CancellationToken::new();
     let storage_context: rangeserver::storage::cassandra::for_testing::TestContext =
-        rangeserver::storage::cassandra::for_testing::init().await;
+        rangeserver::storage::cassandra::for_testing::init(RangeType::Primary).await;
     let server_runtime = setup_server(
         server_socket,
         cancellation_token.clone(),

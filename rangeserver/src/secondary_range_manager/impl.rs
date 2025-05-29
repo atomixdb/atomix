@@ -1,6 +1,7 @@
 use crate::epoch_supplier::EpochSupplier;
 use crate::error::Error;
 use crate::range_manager::r#impl::HighestKnownEpoch;
+use crate::secondary_range_manager::log_applicator::DesiredAppliedEpoch;
 use crate::storage::RangeInfo;
 use crate::storage::Storage;
 use crate::wal::Wal;
@@ -8,20 +9,22 @@ use bytes::Bytes;
 use common::config::Config;
 use common::full_range_id::FullRangeId;
 use common::transaction_info::TransactionInfo;
-use proto::rangeserver::{
-    replicate_request, replicate_response, ReplicateDataResponse, ReplicateRequest,
-    ReplicateResponse,
-};
+use flatbuf::rangeserver_flatbuffers::range_server::{root_as_log_entry, Entry};
+use prost::Message;
+use proto::rangeserver::replicate_request;
+use proto::rangeserver::ReplicateDataRequest;
+use proto::rangeserver::{ReplicateRequest, ReplicateResponse};
+use proto::warden::SecondaryRangeStatus;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::pin::Pin;
+use std::sync::atomic::AtomicI64;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio_stream::Stream;
-use tokio_stream::StreamExt;
 use tonic::async_trait;
 use tonic::Status as TStatus;
 use tracing::error;
@@ -29,133 +32,82 @@ use tracing::info;
 
 use super::log_applicator::LogApplicator;
 use super::log_applicator::LogApplicatorHandle;
+use super::replication_server::ReplicationServer;
+use super::replication_server::ReplicationServerHandle;
 use super::GetResult;
 use super::LoadableRange;
 use super::SecondaryRangeManager as SecondaryRangeManagerTrait;
 
+pub type AtomicEpoch = OptionalAtomicMonotonicU64;
+pub type AtomicWalOffset = OptionalAtomicMonotonicU64;
+
+pub struct OptionalAtomicMonotonicU64 {
+    val: AtomicI64,
+}
+
+impl OptionalAtomicMonotonicU64 {
+    const EPOCH_UNSET_SENTINEL: i64 = -1;
+
+    pub fn new(epoch: Option<u64>) -> Self {
+        let val = epoch
+            .map(|e| e as i64)
+            .unwrap_or(Self::EPOCH_UNSET_SENTINEL);
+        Self {
+            val: AtomicI64::new(val),
+        }
+    }
+
+    pub fn set(&self, epoch: u64) {
+        let epoch = epoch as i64;
+        let prev = self.val.swap(epoch, Ordering::SeqCst);
+        if epoch < prev {
+            panic!("Epoch {} is less than previous epoch {}", epoch, prev);
+        }
+    }
+
+    pub fn get(&self) -> Option<u64> {
+        let val = self.val.load(Ordering::SeqCst);
+        match val {
+            Self::EPOCH_UNSET_SENTINEL => None,
+            _ => Some(val as u64),
+        }
+    }
+}
+
+#[cfg_attr(feature = "test_access", pub_fields::pub_fields)]
 struct LoadedState {
     range_info: RangeInfo,
     highest_known_epoch: HighestKnownEpoch,
+    /// Replication state
+    wal_epoch: Arc<AtomicEpoch>,
+    /// Applied WAL entries.
+    log_applicator: LogApplicatorHandle,
+    /// Receives WAL entries from the primary and sends ACKs back.
+    replication_server: Option<ReplicationServerHandle>,
+    /// Renews the epoch lease.
+    lease_renewal_task: Option<tokio::task::JoinHandle<Result<(), Error>>>,
 }
 
-enum State {
+pub enum State {
     NotLoaded,
     Loading(tokio::sync::broadcast::Sender<Result<(), Error>>),
     Loaded(LoadedState),
     Unloaded,
 }
 
-pub struct ReplicationServer<S, W>
-where
-    S: Storage,
-    W: Wal,
-{
-    receiver: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
-    sender: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
-    log_applicator: LogApplicatorHandle,
-    wal: Arc<W>,
-    storage: Arc<S>,
-    ack_send_frequency: u64,
-    last_acked_wal_offset: Option<u64>,
-}
-
-impl<S, W> ReplicationServer<S, W>
-where
-    S: Storage,
-    W: Wal,
-{
-    pub fn new(
-        range_id: FullRangeId,
-        receiver: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
-        sender: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
-        storage: Arc<S>,
-        wal: Arc<W>,
-        runtime: tokio::runtime::Handle,
-    ) -> Self {
-        let (mut log_applicator, log_applicator_handle) =
-            LogApplicator::<S, W>::new(range_id, wal.clone(), storage.clone());
-
-        runtime.spawn(async move {
-            log_applicator.apply_loop().await;
-        });
-
-        Self {
-            receiver,
-            sender,
-            log_applicator: log_applicator_handle,
-            wal,
-            storage,
-            ack_send_frequency: 1,
-            last_acked_wal_offset: None,
-        }
-    }
-
-    pub async fn serve(&mut self) -> Result<(), ReplicationError> {
-        // TODO(yanniszark): Set the desired applied epoch dynamically.
-        self.log_applicator.set_desired_applied_epoch(0);
-        let result = self.serve_inner().await;
-        match result {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                error!("Replication server failed: {:?}", e);
-                Err(e)
-            }
-        }
-    }
-
-    async fn serve_inner(&mut self) -> Result<(), ReplicationError> {
-        // TODO: Maybe add a stop channel to stop the server gracefully.
-        let mut message_counter = 0;
-        loop {
-            // Get the next message from the stream.
-            let message = match self.receiver.next().await {
-                Some(Ok(msg)) => msg,
-                None => return Err(ReplicationError::StreamDropped),
-                Some(Err(e)) => return Err(ReplicationError::InternalError(Arc::new(e))),
-            };
-            // Process the message.
-            match message.request.unwrap() {
-                replicate_request::Request::Init(_) => {
-                    return Err(ReplicationError::InitReceivedOnExistingStream);
-                }
-                replicate_request::Request::Data(data) => {
-                    // Persist to WAL
-                    let wal_offset = data.primary_wal_offset;
-                    self.wal.append_replicated_commit(data).await.unwrap();
-                    self.last_acked_wal_offset = Some(wal_offset);
-                }
-            }
-            message_counter += 1;
-            if message_counter % self.ack_send_frequency == 0 {
-                // Send an ack back to the client.
-                let response = ReplicateResponse {
-                    response: Some(replicate_response::Response::Data(ReplicateDataResponse {
-                        acked_wal_offset: self.last_acked_wal_offset.unwrap(),
-                    })),
-                };
-                self.sender
-                    .send(Ok(response))
-                    .await
-                    .map_err(|e| ReplicationError::InternalError(Arc::new(e)))?;
-            }
-        }
-        Ok(())
-    }
-}
-
+#[cfg_attr(feature = "test_access", pub_fields::pub_fields)]
 pub struct SecondaryRangeManager<S, W>
 where
     S: Storage,
     W: Wal,
 {
-    range_id: FullRangeId,
+    pub range_id: FullRangeId,
     config: Config,
     storage: Arc<S>,
     epoch_supplier: Arc<dyn EpochSupplier>,
     wal: Arc<W>,
     state: Arc<RwLock<State>>,
     bg_runtime: tokio::runtime::Handle,
-    replication_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 #[derive(Clone, Debug, Error)]
@@ -215,6 +167,21 @@ where
 
     async fn unload(&self) {
         let mut state = self.state.write().await;
+        if let State::Loaded(loaded_state) = state.deref_mut() {
+            // Stop the replication server
+            if let Some(handle) = loaded_state.replication_server.as_mut() {
+                handle.stop().await;
+            }
+            // Stop the log applicator
+            loaded_state.log_applicator.stop().await;
+            // Stop the lease renewal task
+            if let Some(task) = loaded_state.lease_renewal_task.take() {
+                task.abort();
+                if let Err(e) = task.await {
+                    error!("Renew epoch lease task error: {}", e);
+                }
+            }
+        }
         *state = State::Unloaded;
     }
 
@@ -243,43 +210,68 @@ where
         &self,
         recv_stream: Pin<Box<dyn Stream<Item = Result<ReplicateRequest, TStatus>> + Send>>,
         send_stream: tokio::sync::mpsc::Sender<Result<ReplicateResponse, TStatus>>,
-    ) -> Result<(), ReplicationError> {
-        // Is there a replication task already?
-        // If there is one but it's finished, we can start a new one.
-        let mut replication_task = self.replication_task.lock().await;
-        match replication_task.deref() {
-            Some(handle) => {
-                if handle.is_finished() {
-                    // Extract the result
-                    // TODO: Handle this more systematically.
-                    // The task is finished, we can start a new one.
-                    *replication_task = None;
-                } else {
-                    // The task is still running, we cannot start a new one.
-                    return Err(ReplicationError::StreamAlreadyExists);
+    ) -> Result<(), Error> {
+        let mut state = self.state.write().await;
+        match state.deref_mut() {
+            State::Loaded(state) => {
+                // Is there a replication task already?
+                // If there is one but it's finished, we can start a new one.
+                match &state.replication_server {
+                    Some(_) => {
+                        error!("Replication task already exists");
+                        return Err(Error::internal_error_from_string(
+                            "Replication task already exists",
+                        ));
+                    }
+                    None => {}
                 }
+                // Start the replication task.
+                // Create a new task to handle replication
+                let storage_clone = self.storage.clone();
+                let wal_clone = self.wal.clone();
+                let range_id = self.range_id;
+                let bg_runtime = self.bg_runtime.clone();
+                state.replication_server = Some(
+                    ReplicationServer::new(
+                        range_id,
+                        state.wal_epoch.clone(),
+                        recv_stream,
+                        send_stream,
+                        storage_clone,
+                        wal_clone,
+                    )
+                    .serve(&bg_runtime),
+                );
+                Ok(())
             }
-            None => {}
+            State::NotLoaded | State::Unloaded | State::Loading(_) => {
+                return Err(Error::RangeIsNotLoaded);
+            }
         }
-        // Start the replication task.
-        // Create a new task to handle replication
-        let storage_clone = self.storage.clone();
-        let wal_clone = self.wal.clone();
-        let range_id = self.range_id;
-        let bg_runtime = self.bg_runtime.clone();
-        *replication_task = Some(self.bg_runtime.spawn(async move {
-            let mut replication_server = ReplicationServer::new(
-                range_id,
-                recv_stream,
-                send_stream,
-                storage_clone,
-                wal_clone,
-                bg_runtime,
-            );
-            let _ = replication_server.serve().await;
-        }));
+    }
 
-        Ok(())
+    async fn status(&self) -> Result<SecondaryRangeStatus, Error> {
+        let state = self.state.read().await;
+        match state.deref() {
+            State::Loaded(s) => Ok(SecondaryRangeStatus {
+                range_id: Some(self.range_id.into()),
+                leader_sequence_number: s.range_info.common().leader_sequence_number,
+                applied_epoch: s.log_applicator.get_actual_applied_epoch(),
+                wal_epoch: s.wal_epoch.get(),
+            }),
+            _ => return Err(Error::RangeIsNotLoaded),
+        }
+    }
+
+    async fn set_desired_applied_epoch(&self, epoch: u64) -> Result<(), Error> {
+        let mut state = self.state.write().await;
+        match state.deref_mut() {
+            State::Loaded(s) => {
+                s.log_applicator.desired_applied_epoch.set(epoch);
+                Ok(())
+            }
+            _ => return Err(Error::RangeIsNotLoaded),
+        }
     }
 }
 
@@ -304,7 +296,6 @@ where
             wal: Arc::new(wal),
             state: Arc::new(RwLock::new(State::NotLoaded)),
             bg_runtime,
-            replication_task: Mutex::new(None),
         })
     }
 
@@ -336,7 +327,17 @@ where
                     .take_ownership_and_load_range(range_id)
                     .await
                     .map_err(Error::from_storage_error)?;
-                info!("Loaded range: {:?}", range_info.id);
+                info!("Loaded range: {:?}", range_info.common().id);
+
+                let (common_range_info, applied_secondary_wal_offset) = match &range_info {
+                    RangeInfo::Primary { .. } => {
+                        panic!("Primary range loaded as secondary");
+                    }
+                    RangeInfo::Secondary {
+                        common,
+                        applied_secondary_wal_offset,
+                    } => (common, applied_secondary_wal_offset),
+                };
                 // Epoch read from the provider can be 1 less than the true epoch. The highest known epoch
                 // of a range cannot move backward even across range load/unloads, so to maintain that guarantee
                 // we just wait for the epoch to advance once.
@@ -354,34 +355,88 @@ where
                 // Calculate how many epochs we need for a ~10 second lease
                 let highest_known_epoch = epoch + 1;
                 let new_epoch_lease_lower_bound =
-                    std::cmp::max(highest_known_epoch, range_info.epoch_lease.1 + 1);
+                    std::cmp::max(highest_known_epoch, common_range_info.epoch_lease.1 + 1);
                 let new_epoch_lease_upper_bound =
                     new_epoch_lease_lower_bound + num_epochs_per_lease;
                 storage
                     .renew_epoch_lease(
                         range_id,
                         (new_epoch_lease_lower_bound, new_epoch_lease_upper_bound),
-                        range_info.leader_sequence_number,
+                        common_range_info.leader_sequence_number,
                     )
                     .await
                     .map_err(Error::from_storage_error)?;
                 wal.sync().await.map_err(Error::from_wal_error)?;
                 // Create a recurrent task to renew.
-                bg_runtime.spawn(async move {
+                let storage_clone = storage.clone();
+                let state_clone = state.clone();
+                let lease_renewal_task = bg_runtime.spawn(async move {
                     Self::renew_epoch_lease_task(
                         range_id,
                         epoch_supplier,
-                        storage,
-                        state,
+                        storage_clone,
+                        state_clone,
                         lease_renewal_interval,
                         num_epochs_per_lease,
                     )
                     .await
                 });
+
+                // Initialize the wal_epoch by checking the last WAL entry.
+                // Since epochs are monotonically increasing, every epoch equal
+                // to the epoch of the last wal entry minus 1 is a completely
+                // replicated epoch.
+                let last_wal_offset = wal.last_offset().await.map_err(Error::from_wal_error)?;
+                let wal_epoch: Option<u64> = match last_wal_offset {
+                    None => None,
+                    Some(last_wal_offset) => {
+                        let last_wal_entry = wal
+                            .get_entry_at_offset(last_wal_offset)
+                            .await
+                            .map_err(Error::from_wal_error)?;
+                        // Unwrap into a ReplicatedCommitEntry
+                        let replicated_commit = entry_to_replicated_commit(last_wal_entry)?;
+                        Some(replicated_commit.epoch - 1)
+                    }
+                };
+
+                // Initialize the applied_epoch by checking the entry at the
+                // applied_secondary_wal_offset.
+                let applied_epoch: Option<u64> = match applied_secondary_wal_offset {
+                    None => None,
+                    Some(applied_secondary_wal_offset) => {
+                        let applied_wal_entry = wal
+                            .get_entry_at_offset(*applied_secondary_wal_offset)
+                            .await
+                            .map_err(Error::from_wal_error)?;
+                        let replicated_commit = entry_to_replicated_commit(applied_wal_entry)?;
+                        Some(replicated_commit.epoch)
+                    }
+                };
+
+                // Start the log applicator
+                let desired_applied_epoch = Arc::new(DesiredAppliedEpoch::new(0));
+                let applied_secondary_wal_offset =
+                    Arc::new(AtomicWalOffset::new(*applied_secondary_wal_offset));
+                let actual_applied_epoch = Arc::new(AtomicEpoch::new(applied_epoch));
+                let log_applicator = LogApplicator::new(
+                    range_id,
+                    applied_secondary_wal_offset,
+                    actual_applied_epoch,
+                    desired_applied_epoch,
+                    wal.clone(),
+                    storage,
+                    bg_runtime.clone(),
+                );
+                let log_applicator_handle = log_applicator.serve();
                 // TODO: apply WAL here!
                 Ok(LoadedState {
                     range_info,
+                    wal_epoch: Arc::new(AtomicEpoch::new(wal_epoch)),
                     highest_known_epoch: HighestKnownEpoch::new(highest_known_epoch),
+                    replication_server: None,
+                    lease_renewal_task: Some(lease_renewal_task),
+                    log_applicator: log_applicator_handle,
                 })
             })
             .await
@@ -405,8 +460,8 @@ where
                 .map_err(Error::from_epoch_supplier_error)?;
             let highest_known_epoch = epoch + 1;
             if let State::Loaded(state) = state.read().await.deref() {
-                old_lease = state.range_info.epoch_lease;
-                leader_sequence_number = state.range_info.leader_sequence_number;
+                old_lease = state.range_info.common().epoch_lease;
+                leader_sequence_number = state.range_info.common().leader_sequence_number;
             } else {
                 tokio::time::sleep(lease_renewal_interval).await;
                 continue;
@@ -440,10 +495,10 @@ where
             if let State::Loaded(state) = state.write().await.deref_mut() {
                 // This should never happen as only this task changes the epoch lease.
                 assert_eq!(
-                    state.range_info.epoch_lease, old_lease,
+                    state.range_info.common().epoch_lease, old_lease,
                     "Epoch lease changed by someone else, but only this task should be changing it!"
                 );
-                state.range_info.epoch_lease = new_lease;
+                state.range_info.common_mut().epoch_lease = new_lease;
                 state
                     .highest_known_epoch
                     .maybe_update(highest_known_epoch)
@@ -457,15 +512,32 @@ where
     }
 }
 
+// Helper functions
+fn entry_to_replicated_commit(entry_bytes: Vec<u8>) -> Result<ReplicateDataRequest, Error> {
+    let entry = root_as_log_entry(&entry_bytes).unwrap();
+    if entry.entry() != Entry::ReplicatedCommit {
+        return Err(Error::internal_error_from_string(
+            format!("Expected a ReplicatedCommit entry. Got {:?}", entry).as_str(),
+        ));
+    }
+    ReplicateDataRequest::decode(entry.bytes().unwrap().bytes()).map_err(|e| {
+        Error::internal_error_from_string(&format!("Failed to decode ReplicateDataRequest: {}", e))
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use common::range_type::RangeType;
     use proto::rangeserver::{replicate_response, Record, ReplicateDataRequest};
     use tokio_stream::wrappers::ReceiverStream;
     use tracing::info;
 
     use crate::{
         for_testing::{epoch_supplier::EpochSupplier, in_memory_wal::InMemoryWal},
-        storage::cassandra::{for_testing, Cassandra},
+        storage::cassandra::{
+            for_testing::{self, TestContext},
+            Cassandra,
+        },
     };
 
     use super::*;
@@ -477,13 +549,16 @@ mod tests {
             .try_init();
     }
 
-    async fn init_secondary_rangemanager() -> Arc<SecondaryRangeManager<Cassandra, InMemoryWal>> {
+    async fn init_secondary_rangemanager(
+        test_context: &TestContext,
+    ) -> Arc<SecondaryRangeManager<Cassandra, InMemoryWal>> {
         let mock_wal = InMemoryWal::new();
         let mock_epoch_supplier = Arc::new(EpochSupplier::new());
         let mock_runtime = tokio::runtime::Handle::current();
-        let test_context = for_testing::init().await;
 
         let mut config: Config = Default::default();
+        config.epoch.epoch_duration = Duration::from_secs(1);
+        config.range_server.range_maintenance_duration = Duration::from_secs(1);
         let protobuf_port = 50054;
         config.range_server.proto_server_addr.port = protobuf_port;
 
@@ -513,7 +588,8 @@ mod tests {
     #[tokio::test]
     async fn test_start_replication() {
         init_tracing();
-        let secondary_range_manager = init_secondary_rangemanager().await;
+        let test_context = for_testing::init(RangeType::Secondary).await;
+        let secondary_range_manager = init_secondary_rangemanager(&test_context).await;
         // TODO: Create replication mapping
 
         info!("Starting replication");
@@ -527,14 +603,21 @@ mod tests {
             .await
             .unwrap();
 
+        // Sleep for a while to ensure the replication task is running.
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         // Check that replication task is running
         {
             info!("Checking replication task status");
-            let replication_task = secondary_range_manager.replication_task.lock().await;
-            assert!(
-                replication_task.is_some(),
-                "Replication task should be running"
-            );
+            let state = secondary_range_manager.state.read().await;
+            match state.deref() {
+                State::Loaded(loaded_state) => {
+                    assert!(
+                        loaded_state.replication_server.is_some(),
+                        "Replication task should be running"
+                    );
+                }
+                _ => panic!("Secondary range manager should be loaded"),
+            }
         }
 
         // Send some data
@@ -582,5 +665,9 @@ mod tests {
                 panic!("No response received from replication stream");
             }
         }
+
+        // Stop the replication task
+        secondary_range_manager.unload().await;
+        info!("Secondary range manager unloaded");
     }
 }

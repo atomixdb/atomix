@@ -67,4 +67,6 @@ pub trait RangeManager: LoadableRange {
     /// Starts replicating the range to a secondary range.
     async fn start_replication(&self, replication_mapping: ReplicationMapping)
         -> Result<(), Error>;
+    /// Get the status of the range.
+    async fn status(&self) -> Result<proto::warden::PrimaryRangeStatus, Error>;
 }

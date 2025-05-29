@@ -15,6 +15,8 @@ pub enum Error {
     Timeout,
     #[error("WAL Layer error: {0}")]
     Internal(Arc<dyn std::error::Error + Send + Sync>),
+    #[error("WAL entry not found")]
+    EntryNotFound,
 }
 
 pub trait Iterator {
@@ -31,13 +33,18 @@ pub trait Wal: Send + Sync + 'static {
     /// Returns the offset of the first entry in the log (if any). Entries below
     /// the returned value would have been removed.
     async fn first_offset(&self) -> Result<Option<u64>, Error>;
+    /// Returns the offset of the last entry in the log (if any).
+    async fn last_offset(&self) -> Result<Option<u64>, Error>;
     /// Returns the offset at which a new entry in the log would be inserted.
     async fn next_offset(&self) -> Result<u64, Error>;
 
-    async fn append_prepare(&self, entry: PrepareRequest<'_>) -> Result<(), Error>;
-    async fn append_commit(&self, entry: CommitRequest<'_>) -> Result<(), Error>;
-    async fn append_abort(&self, entry: AbortRequest<'_>) -> Result<(), Error>;
-    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<(), Error>;
+    /// Returns the entry at the given offset.
+    async fn get_entry_at_offset(&self, offset: u64) -> Result<Vec<u8>, Error>;
+
+    async fn append_prepare(&self, entry: PrepareRequest<'_>) -> Result<u64, Error>;
+    async fn append_commit(&self, entry: CommitRequest<'_>) -> Result<u64, Error>;
+    async fn append_abort(&self, entry: AbortRequest<'_>) -> Result<u64, Error>;
+    async fn append_replicated_commit(&self, entry: ReplicateDataRequest) -> Result<u64, Error>;
     async fn trim_before_offset(&self, offset: u64) -> Result<(), Error>;
 
     fn iterator(self: &Arc<Self>, start_after_offset: Option<u64>) -> impl Iterator + Send;

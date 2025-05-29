@@ -26,12 +26,10 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::range_manager::r#impl::RangeManager;
-use crate::range_manager::secondary::SecondaryRangeManager;
-use crate::range_manager::{
-    LoadableRange, RangeManager as RangeManagerTrait,
-    SecondaryRangeManager as SecondaryRangeManagerTrait,
-};
-use crate::warden_handler::WardenHandler;
+use crate::range_manager::{LoadableRange, RangeManager as RangeManagerTrait};
+use crate::secondary_range_manager::r#impl::SecondaryRangeManager;
+use crate::secondary_range_manager::SecondaryRangeManager as SecondaryRangeManagerTrait;
+use crate::warden_handler::{HeartbeatSupplierImpl, WardenHandler};
 use crate::{
     epoch_supplier::EpochSupplier, error::Error, for_testing::in_memory_wal::InMemoryWal,
     storage::Storage,
@@ -179,6 +177,7 @@ where
     }
 }
 
+#[cfg_attr(feature = "test_access", pub_fields::pub_fields)]
 pub struct Server<S>
 where
     S: Storage,
@@ -189,8 +188,8 @@ where
     warden_handler: WardenHandler,
     bg_runtime: tokio::runtime::Handle,
     // TODO: parameterize the WAL implementation too.
-    loaded_ranges: RwLock<HashMap<Uuid, Arc<RangeManager<S, InMemoryWal>>>>,
-    secondary_loaded_ranges: RwLock<HashMap<Uuid, Arc<SecondaryRangeManager<S, InMemoryWal>>>>,
+    loaded_ranges: Arc<RwLock<HashMap<Uuid, Arc<RangeManager<S, InMemoryWal>>>>>,
+    secondary_loaded_ranges: Arc<RwLock<HashMap<Uuid, Arc<SecondaryRangeManager<S, InMemoryWal>>>>>,
     transaction_table: RwLock<HashMap<Uuid, Arc<TransactionInfo>>>,
     prefetching_buffer: Arc<PrefetchingBuffer>,
 }
@@ -208,15 +207,27 @@ where
         epoch_supplier: Arc<dyn EpochSupplier>,
         bg_runtime: tokio::runtime::Handle,
     ) -> Arc<Self> {
-        let warden_handler = WardenHandler::new(&config, &host_info, epoch_supplier.clone());
+        let loaded_ranges = Arc::new(RwLock::new(HashMap::new()));
+        let secondary_loaded_ranges = Arc::new(RwLock::new(HashMap::new()));
+
+        let heartbeat_supplier = Arc::new(HeartbeatSupplierImpl::new(
+            loaded_ranges.clone(),
+            secondary_loaded_ranges.clone(),
+        ));
+        let warden_handler = WardenHandler::new(
+            &config,
+            &host_info,
+            epoch_supplier.clone(),
+            heartbeat_supplier,
+        );
         Arc::new(Server {
             config,
             storage,
             epoch_supplier,
             warden_handler,
             bg_runtime,
-            loaded_ranges: RwLock::new(HashMap::new()),
-            secondary_loaded_ranges: RwLock::new(HashMap::new()),
+            loaded_ranges,
+            secondary_loaded_ranges,
             transaction_table: RwLock::new(HashMap::new()),
             prefetching_buffer: Arc::new(PrefetchingBuffer::new()),
         })
@@ -729,6 +740,7 @@ where
         loop {
             let () = tokio::select! {
                 () = cancellation_token.cancelled() => {
+                    info!("Warden update loop stopped");
                     server.warden_handler.stop().await;
                     return Ok(())
                 }
@@ -746,9 +758,11 @@ where
                                         // TODO: handle errors here
                                         match range_info.range_type {
                                             RangeType::Primary => {
+                                                info!("Loading primary range {:?}", range_info.full_range_id);
                                                 let _ = server.maybe_load_and_get_primary_range(&range_info.full_range_id).await;
                                             }
                                             RangeType::Secondary => {
+                                                info!("Loading secondary range {:?}", range_info.full_range_id);
                                                 let _ = server.maybe_load_and_get_secondary_range(&range_info.full_range_id).await;
                                             }
                                         }
@@ -765,14 +779,14 @@ where
                                     }
                                 }
                                 crate::warden_handler::WardenUpdate::NewReplicationMapping(rm) => {
-                                    // todo!("implement load replication mapping");
-                                    // TODO(yanniszark): implement load replication mapping
+                                    // TODO(yanniszark): Retry on failure. Worth doing this on a separate task.
                                     // Get the primary range
+                                    info!("Got new replication mapping: {:?}", rm);
                                     let primary_range = server.maybe_load_and_get_primary_range(&rm.primary_range).await;
                                     let primary_range = match primary_range {
                                         Ok(range) => range,
                                         Err(e) => {
-                                            error!("Failed to load primary range: {:?}", e);
+                                            error!("Failed to load primary range {:?}: {:?}", rm.primary_range, e);
                                             continue;
                                         }
                                     };
@@ -782,6 +796,18 @@ where
                                         Ok(_) => (),
                                         Err(e) => {
                                             error!("Failed to start replication: {:?}", e);
+                                        }
+                                    }
+                                }
+                                crate::warden_handler::WardenUpdate::DesiredAppliedEpoch(keyspace_id, epoch) => {
+                                    info!("Got desired applied epoch {} for keyspace {:?}", epoch, keyspace_id);
+                                    // Get all secondary ranges in this keyspace and update the desired applied epoch
+                                    let secondary_ranges = server.secondary_loaded_ranges.read().await;
+                                    for (_, secondary_range) in secondary_ranges.iter() {
+                                        if &secondary_range.range_id.keyspace_id == keyspace_id {
+                                            secondary_range.set_desired_applied_epoch(*epoch).await.unwrap_or_else(|e| {
+                                                error!("Failed to set desired applied epoch for range {:?}: {:?}", secondary_range.range_id, e);
+                                            });
                                         }
                                     }
                                 }
@@ -920,6 +946,7 @@ where
 #[cfg(test)]
 pub mod tests {
     use crate::epoch_supplier::EpochSupplier as Trait;
+    use crate::storage::cassandra::for_testing::init_secondary_for_primary;
     use common::config::{
         CassandraConfig, EpochConfig, FrontendConfig, HostPort, RangeServerConfig, RegionConfig,
         UniverseConfig,
@@ -928,6 +955,7 @@ pub mod tests {
     use common::network::for_testing::udp_fast_network::UdpFastNetwork;
     use common::region::{Region, Zone};
     use core::time;
+    use proto::rangeserver::range_server_client::RangeServerClient;
     use std::collections::HashSet;
     use std::net::UdpSocket;
     use std::str::FromStr;
@@ -955,11 +983,16 @@ pub mod tests {
         proto_server_listener: TcpListener,
     }
 
+    /// Helper function to initialize a test context. A test context contains:
+    /// - A mock warden
+    /// - A range server
+    ///
+    /// Assumes there's a Cassandra instance running on 127.0.0.1:9042.
     async fn init() -> TestContext {
         let fast_network = Arc::new(UdpFastNetwork::new(UdpSocket::bind("127.0.0.1:0").unwrap()));
         let epoch_supplier = Arc::new(EpochSupplier::new());
         let storage_context: crate::storage::cassandra::for_testing::TestContext =
-            crate::storage::cassandra::for_testing::init().await;
+            crate::storage::cassandra::for_testing::init(RangeType::Primary).await;
         let cassandra = storage_context.cassandra.clone();
         let mock_warden = MockWarden::new();
         let warden_address_sa = mock_warden.start(None).await.unwrap();

@@ -47,6 +47,7 @@ impl Error {
             WalError::Timeout => Self::Timeout,
             WalError::NotSynced => Self::RangeOwnershipLost,
             WalError::Internal(e) => Self::InternalError(e),
+            WalError::EntryNotFound => Self::InternalError(Arc::new(e)),
         }
     }
 
