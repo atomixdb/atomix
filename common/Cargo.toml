@@ -18,3 +18,4 @@ tracing = "0.1.40"
 async-trait = "0.1.83"
 chrono = "0.4.38"
 scylla = "0.13.2"
+nix = { version = "0.27.1", features = ["sched"] }
