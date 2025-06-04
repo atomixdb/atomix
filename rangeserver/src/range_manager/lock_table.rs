@@ -7,6 +7,12 @@ use tokio::sync::oneshot;
 use tokio::sync::RwLock;
 
 type UtcDateTime = DateTime<chrono::Utc>;
+
+pub enum LockResult {
+    Acquired,
+    WaitToAcquire(oneshot::Receiver<()>),
+}
+
 pub struct CurrentLockHolder {
     transaction: Arc<TransactionInfo>,
     when_acquired: UtcDateTime,
@@ -63,7 +69,7 @@ impl LockTable {
         r
     }
 
-    pub async fn acquire(&self, tx: Arc<TransactionInfo>) -> Result<oneshot::Receiver<()>, Error> {
+    pub async fn acquire(&self, tx: Arc<TransactionInfo>) -> Result<LockResult, Error> {
         let when_requested = chrono::Utc::now();
         let (s, r) = oneshot::channel();
         let mut state = self.state.write().await;
@@ -76,12 +82,12 @@ impl LockTable {
                 };
                 state.current_holder = Some(holder);
                 s.send(()).unwrap();
-                Ok(r)
+                Ok(LockResult::Acquired)
             }
             Some(current_holder) => {
                 if current_holder.transaction.id == tx.id {
                     s.send(()).unwrap();
-                    Ok(r)
+                    Ok(LockResult::Acquired)
                 } else {
                     let highest_waiter = state
                         .waiting_to_acquire
@@ -97,7 +103,7 @@ impl LockTable {
                             when_requested: chrono::Utc::now(),
                         };
                         state.waiting_to_acquire.push_back(req);
-                        Ok(r)
+                        Ok(LockResult::WaitToAcquire(r))
                     }
                 }
             }

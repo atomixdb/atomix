@@ -1,6 +1,7 @@
 use super::replication_client::ReplicationClientHandle;
 use super::{GetResult, LoadableRange, PrepareResult, RangeManager as Trait};
 use crate::error::Error;
+use crate::range_manager::lock_table::LockResult;
 use crate::{
     epoch_supplier::EpochSupplier, key_version::KeyVersion, range_manager::lock_table,
     storage::RangeInfo, storage::Storage, transaction_abort_reason::TransactionAbortReason,
@@ -207,32 +208,48 @@ where
 
                     return Err(Error::KeyIsOutOfRange);
                 };
-                self.acquire_range_lock(state, tx.clone()).await?;
+                let lock_result = self.acquire_range_lock(state, tx.clone()).await?;
+                match lock_result {
+                    LockResult::Acquired => {
+                        let mut get_result = GetResult {
+                            val: None,
+                            leader_sequence_number: state.range_info.common().leader_sequence_number
+                                as i64,
+                        };
 
-                let mut get_result = GetResult {
-                    val: None,
-                    leader_sequence_number: state.range_info.common().leader_sequence_number as i64,
-                };
+                        // check prefetch buffer
+                        let value = self
+                            .prefetching_buffer
+                            .get_from_buffer(key.clone())
+                            .await
+                            .map_err(|_| Error::PrefetchError)?;
+                        if let Some(val) = value {
+                            get_result.val = Some(val);
+                        } else {
+                            let val = self
+                                .storage
+                                .get(self.range_id, key.clone())
+                                .await
+                                .map_err(Error::from_storage_error)?;
 
-                // check prefetch buffer
-                let value = self
-                    .prefetching_buffer
-                    .get_from_buffer(key.clone())
-                    .await
-                    .map_err(|_| Error::PrefetchError)?;
-                if let Some(val) = value {
-                    get_result.val = Some(val);
-                } else {
-                    let val = self
-                        .storage
-                        .get(self.range_id, key.clone())
-                        .await
-                        .map_err(Error::from_storage_error)?;
+                            get_result.val = val.clone();
+                        }
 
-                    get_result.val = val.clone();
+                        Ok(get_result)
+                    }
+                    LockResult::WaitToAcquire(rx) => {
+                        // Drop the read lock on state before waiting
+                        drop(s);
+
+                        // Wait on the oneshot channel
+                        rx.await.map_err(|_| {
+                            Error::TransactionAborted(TransactionAbortReason::TransactionLockLost)
+                        })?;
+
+                        // Retry get after receiving signal
+                        self.get(tx, key).await
+                    }
                 }
-
-                Ok(get_result)
             }
         }
     }
@@ -276,26 +293,44 @@ where
                     ));
                 }
 
-                self.acquire_range_lock(state, tx.clone()).await?;
-                {
-                    // TODO: probably don't need holding that latch while writing to the WAL.
-                    // but needs careful thinking.
-                    let mut pending_prepare_records = state.pending_prepare_records.lock().await;
-                    self.wal
-                        .append_prepare(prepare)
-                        .await
-                        .map_err(Error::from_wal_error)?;
+                let lock_result = self.acquire_range_lock(state, tx.clone()).await?;
+                match lock_result {
+                    LockResult::Acquired => {
+                        {
+                            // TODO: probably don't need holding that latch while writing to the WAL.
+                            // but needs careful thinking.
+                            let mut pending_prepare_records =
+                                state.pending_prepare_records.lock().await;
+                            self.wal
+                                .append_prepare(prepare)
+                                .await
+                                .map_err(Error::from_wal_error)?;
 
-                    pending_prepare_records
-                        .insert(tx.id, Bytes::copy_from_slice(prepare._tab.buf()));
+                            pending_prepare_records
+                                .insert(tx.id, Bytes::copy_from_slice(prepare._tab.buf()));
+                        }
+
+                        let highest_known_epoch = state.highest_known_epoch.read().await;
+
+                        Ok(PrepareResult {
+                            highest_known_epoch,
+                            epoch_lease: state.range_info.common().epoch_lease,
+                        })
+                    }
+                    LockResult::WaitToAcquire(rx) => {
+                        // Drop the read lock on state before waiting
+                        drop(s);
+
+                        // Wait on the oneshot channel
+                        rx.await.map_err(|_| {
+                            Error::TransactionAborted(TransactionAbortReason::TransactionLockLost)
+                        })?;
+
+                        // Retry prepare after receiving signal
+                        // TODO(yanniszark): Avoid infinite recursion here.
+                        self.prepare(tx, prepare).await
+                    }
                 }
-
-                let highest_known_epoch = state.highest_known_epoch.read().await;
-
-                Ok(PrepareResult {
-                    highest_known_epoch,
-                    epoch_lease: state.range_info.common().epoch_lease,
-                })
             }
         }
     }
@@ -668,11 +703,8 @@ where
         &self,
         state: &LoadedState,
         tx: Arc<TransactionInfo>,
-    ) -> Result<(), Error> {
-        let receiver = state.lock_table.acquire(tx.clone()).await?;
-        // TODO: allow timing out locks when transaction timeouts are implemented.
-        receiver.await.unwrap();
-        Ok(())
+    ) -> Result<lock_table::LockResult, Error> {
+        state.lock_table.acquire(tx.clone()).await
     }
 
     /// Get from database without acquiring any locks
