@@ -1,9 +1,11 @@
 use clap::Parser;
+use console_subscriber::ConsoleLayer;
 use std::{
     fs::read_to_string,
     net::{ToSocketAddrs, UdpSocket},
     sync::Arc,
 };
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 use common::{
     config::Config,
@@ -39,6 +41,7 @@ struct Args {
 
 fn main() {
     tracing_subscriber::fmt::init();
+    // console_subscriber::init();
     let args = Args::parse();
     let config: Config = serde_json::from_str(&read_to_string(&args.config).unwrap()).unwrap();
 

@@ -4,6 +4,7 @@ use common::{
     config::Config, keyspace::Keyspace, network::fast_network::FastNetwork, region::Zone,
     transaction_info::TransactionInfo,
 };
+use coordinator::cache::KeyspaceCache;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -373,6 +374,7 @@ impl Server {
         zone: Zone,
         fast_network: Arc<dyn FastNetwork>,
         range_assignment_oracle: Arc<RangeAssignmentOracle>,
+        cache: Arc<dyn KeyspaceCache>,
         runtime: tokio::runtime::Handle,
         bg_runtime: tokio::runtime::Handle,
         cancellation_token: CancellationToken,
@@ -381,6 +383,7 @@ impl Server {
             &config,
             zone,
             range_assignment_oracle,
+            cache,
             fast_network.clone(),
             runtime.clone(),
             bg_runtime.clone(),

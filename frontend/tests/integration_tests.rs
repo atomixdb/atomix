@@ -160,13 +160,18 @@ async fn setup() -> TestContext {
     RUNTIME.spawn(async move {
         let cancellation_token = CancellationToken::new();
         let universe_client = MockUniverse::start(&config).await.unwrap();
-        let range_assignment_oracle = Arc::new(RangeAssignmentOracle::new(universe_client));
+        let cache = Arc::new(coordinator::cache::in_memory::InMemoryCache::new(
+            universe_client,
+            RUNTIME.handle().clone(),
+        ));
+        let range_assignment_oracle = Arc::new(RangeAssignmentOracle::new(cache.clone()));
 
         let server = Server::new(
             config,
             zone_clone,
             fast_network,
             range_assignment_oracle,
+            cache,
             RUNTIME.handle().clone(),
             RUNTIME.handle().clone(),
             cancellation_token.clone(),

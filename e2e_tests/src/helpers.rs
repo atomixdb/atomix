@@ -511,13 +511,18 @@ pub async fn start_frontend(config: Config, zone: Zone) -> FrontendHandle {
         let client = UniverseClient::connect(format!("http://{}", proto_server_addr))
             .await
             .unwrap();
+        let cache = Arc::new(coordinator::cache::in_memory::InMemoryCache::new(
+            client,
+            runtime_handle.clone(),
+        ));
         let range_assignment_oracle =
-            Arc::new(frontend::range_assignment_oracle::RangeAssignmentOracle::new(client));
+            Arc::new(frontend::range_assignment_oracle::RangeAssignmentOracle::new(cache.clone()));
         let server = frontend::frontend::Server::new(
             config.clone(),
             zone,
             fast_network.clone(),
             range_assignment_oracle,
+            cache,
             runtime_handle,
             bg_runtime_clone,
             ct_clone,

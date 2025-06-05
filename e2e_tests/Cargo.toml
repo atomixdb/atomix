@@ -9,6 +9,7 @@ proto = {path = "../proto"}
 epoch = {path = "../epoch"}
 epoch_publisher = {path = "../epoch_publisher"}
 frontend = {path = "../frontend"}
+coordinator = {path = "../coordinator"}
 rangeserver = {path = "../rangeserver", features = ["test_access"]}
 warden = {path = "../warden", features = ["test_access"]}
 universe = {path = "../universe"}

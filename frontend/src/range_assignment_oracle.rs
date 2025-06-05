@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use bytes::Bytes;
+use coordinator::cache::KeyspaceCache;
 use uuid::Uuid;
 
 use common::membership::range_assignment_oracle::RangeAssignmentOracle as RangeAssignmentOracleTrait;
@@ -19,12 +22,12 @@ use proto::universe::{
 // TODO: Dumb little Oracle -- redesign it
 
 pub struct RangeAssignmentOracle {
-    universe_client: UniverseClient<tonic::transport::Channel>,
+    cache: Arc<dyn KeyspaceCache>,
 }
 
 impl RangeAssignmentOracle {
-    pub fn new(universe_client: UniverseClient<tonic::transport::Channel>) -> Self {
-        RangeAssignmentOracle { universe_client }
+    pub fn new(cache: Arc<dyn KeyspaceCache>) -> Self {
+        RangeAssignmentOracle { cache }
     }
 
     fn proto_key_range_includes(&self, key_range: &ProtoKeyRange, key: Bytes) -> bool {
@@ -63,13 +66,7 @@ impl RangeAssignmentOracleTrait for RangeAssignmentOracle {
                 keyspace_id.id.to_string(),
             )),
         };
-        let mut client = self.universe_client.clone();
-        let keyspace_info_response = client
-            .get_keyspace_info(keyspace_info_request)
-            .await
-            .unwrap();
-
-        let keyspace_info = keyspace_info_response.into_inner().keyspace_info.unwrap();
+        let keyspace_info = self.cache.get_keyspace_info(keyspace_id).await.unwrap();
 
         for range in keyspace_info.base_key_ranges {
             if self.proto_key_range_includes(&range, key.clone()) {
@@ -252,7 +249,11 @@ mod tests {
             }
         }
 
-        let range_assignment_oracle = Arc::new(RangeAssignmentOracle::new(client));
+        let cache = Arc::new(coordinator::cache::in_memory::InMemoryCache::new(
+            client,
+            RUNTIME.handle().clone(),
+        ));
+        let range_assignment_oracle = Arc::new(RangeAssignmentOracle::new(cache));
         TestContext {
             range_assignment_oracle,
             server_shutdown_tx: Some(signal_tx),

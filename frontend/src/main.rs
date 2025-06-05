@@ -4,6 +4,7 @@ use common::{
     network::{fast_network::FastNetwork, for_testing::udp_fast_network::UdpFastNetwork},
     region::{Region, Zone},
 };
+use coordinator::cache::in_memory::InMemoryCache;
 use std::{
     fs::read_to_string,
     net::{ToSocketAddrs, UdpSocket},
@@ -77,12 +78,14 @@ fn main() {
         let client = UniverseClient::connect(format!("http://{}", proto_server_addr))
             .await
             .unwrap();
-        let range_assignment_oracle = Arc::new(RangeAssignmentOracle::new(client));
+        let cache = Arc::new(InMemoryCache::new(client, runtime_handle.clone()));
+        let range_assignment_oracle = Arc::new(RangeAssignmentOracle::new(cache.clone()));
         let server = Server::new(
             config,
             zone,
             fast_network.clone(),
             range_assignment_oracle,
+            cache,
             runtime_handle,
             bg_runtime_clone,
             ct_clone,
