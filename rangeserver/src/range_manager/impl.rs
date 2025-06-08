@@ -237,7 +237,7 @@ where
                 // Validate the transaction lock is not lost, this is essential to ensure 2PL
                 // invariants still hold.
 
-                if prepare.has_reads() && !state.lock_table.is_currently_holding(tx.clone()).await {
+                if prepare.has_reads() && !state.lock_table.is_currently_holding(tx.id).await {
                     return Err(Error::TransactionAborted(
                         TransactionAbortReason::TransactionLockLost,
                     ));
@@ -274,7 +274,7 @@ where
                 return Err(Error::RangeIsNotLoaded)
             }
             State::Loaded(state) => {
-                if !state.lock_table.is_currently_holding(tx.clone()).await {
+                if !state.lock_table.is_currently_holding(tx.id).await {
                     return Ok(());
                 }
                 {
@@ -299,7 +299,7 @@ where
 
     async fn commit(
         &self,
-        tx: Arc<TransactionInfo>,
+        tx_id: Uuid,
         commit: CommitRequest<'_>,
     ) -> Result<(), Error> {
         let s = self.state.read().await;
@@ -308,7 +308,7 @@ where
                 return Err(Error::RangeIsNotLoaded)
             }
             State::Loaded(state) => {
-                if !state.lock_table.is_currently_holding(tx.clone()).await {
+                if !state.lock_table.is_currently_holding(tx_id).await {
                     // it must be that we already finished committing, but perhaps the coordinator didn't
                     // realize that, so we just return success.
                     return Ok(());
@@ -323,7 +323,7 @@ where
                 let prepare_record_bytes = {
                     let mut pending_prepare_records = state.pending_prepare_records.lock().await;
                     // TODO: handle prior removals.
-                    pending_prepare_records.remove(&tx.id).unwrap().clone()
+                    pending_prepare_records.remove(&tx_id).unwrap().clone()
                 };
 
                 let prepare_record =
@@ -377,7 +377,7 @@ where
                 state.lock_table.release().await;
                 // Process transaction complete and remove the requests from the logs
                 self.prefetching_buffer
-                    .process_transaction_complete(tx.id)
+                    .process_transaction_complete(tx_id)
                     .await;
                 Ok(())
             }
@@ -702,7 +702,7 @@ mod tests {
             fbb.finish(fbb_root, None);
             let commit_record_bytes = fbb.finished_data();
             let commit_record = flatbuffers::root::<CommitRequest>(commit_record_bytes).unwrap();
-            self.commit(tx.clone(), commit_record).await
+            self.commit(tx.id, commit_record).await
         }
     }
 

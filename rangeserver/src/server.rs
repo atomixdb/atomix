@@ -477,8 +477,7 @@ where
             Some(id) => util::flatbuf::deserialize_uuid(id),
         };
         let rm = self.maybe_load_and_get_range(&range_id).await?;
-        let tx = self.get_transaction_info(transaction_id).await?;
-        rm.commit(tx.clone(), request).await?;
+        rm.commit(transaction_id, request).await?;
         self.remove_transaction(transaction_id).await;
         Ok(())
     }
