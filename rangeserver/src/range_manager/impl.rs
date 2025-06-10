@@ -267,14 +267,14 @@ where
         }
     }
 
-    async fn abort(&self, tx: Arc<TransactionInfo>, abort: AbortRequest<'_>) -> Result<(), Error> {
+    async fn abort(&self, tx_id : Uuid, abort: AbortRequest<'_>) -> Result<(), Error> {
         let s = self.state.read().await;
         match s.deref() {
             State::NotLoaded | State::Unloaded | State::Loading(_) => {
                 return Err(Error::RangeIsNotLoaded)
             }
             State::Loaded(state) => {
-                if !state.lock_table.is_currently_holding(tx.id).await {
+                if !state.lock_table.is_currently_holding(tx_id).await {
                     return Ok(());
                 }
                 {
@@ -290,7 +290,7 @@ where
 
                 let _ = self
                     .prefetching_buffer
-                    .process_transaction_complete(tx.id)
+                    .process_transaction_complete(tx_id)
                     .await;
                 Ok(())
             }
@@ -619,7 +619,7 @@ mod tests {
             fbb.finish(fbb_root, None);
             let abort_record_bytes = fbb.finished_data();
             let abort_record = flatbuffers::root::<AbortRequest>(abort_record_bytes).unwrap();
-            self.abort(tx.clone(), abort_record).await.unwrap()
+            self.abort(tx.id, abort_record).await.unwrap()
         }
 
         async fn prepare_transaction(
