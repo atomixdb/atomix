@@ -1,0 +1,53 @@
+version: '3.8'
+
+networks:
+  ybnet:
+    driver: bridge
+
+services:
+
+  # Primary universe: 1 node
+  yb-primary:
+    image: yugabytedb/yugabyte:2.25.2.0-b359
+    container_name: yb-primary
+    command: >
+      bin/yugabyted start --background=false --base_dir=/mnt/data
+    ports:
+      - "7000:7000"   # master UI
+      - "9000:9000"   # tserver UI
+      - "5433:5433"   # YSQL
+      - "15433:15433" # YugaByte UI
+    networks:
+      - ybnet
+
+  # Secondary universe: node 1 (seed node)
+  yb-secondary-1:
+    image: yugabytedb/yugabyte:2.25.2.0-b359
+    container_name: yb-secondary-1
+    command: >
+      bin/yugabyted start --background=false --base_dir=/mnt/data
+    ports:
+      - "7001:7000"
+      - "9001:9000"
+      - "5434:5433"
+      - "15434:15433" # YugaByte UI
+    networks:
+      - ybnet
+
+  # Secondary universe: node 2 (joins node 1)
+  yb-secondary-2:
+    image: yugabytedb/yugabyte:2.25.2.0-b359
+    container_name: yb-secondary-2
+    depends_on:
+      - yb-secondary-1
+    restart: on-failure
+    command: >
+      /bin/sh -c "sleep 10 && bin/yugabyted start --background=false --base_dir=/mnt/data --join=\"yb-secondary-1\""
+
+    ports:
+      - "7002:7000"
+      - "9002:9000"
+      - "5435:5433"
+      - "15435:15433" # YugaByte UI
+    networks:
+      - ybnet
