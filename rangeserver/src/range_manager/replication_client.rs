@@ -13,7 +13,7 @@ use proto::rangeserver::ReplicateResponse;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tonic::transport::Channel;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::error::Error;
 
@@ -80,7 +80,7 @@ impl ReplicationClientHandle {
             Error::InternalError(Arc::new(e))
         })?;
 
-        info!(
+        debug!(
             "Successfully queued update with primary wal_offset {}",
             wal_offset
         );
@@ -93,7 +93,7 @@ impl ReplicationClient {
         secondary_address: HostPort,
         secondary_range_id: FullRangeId,
     ) -> (Self, ReplicationClientHandle) {
-        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        let (tx, rx) = tokio::sync::mpsc::channel(1024);
         let state = Arc::new(RwLock::new(State::NotStarted));
         (
             Self {
@@ -221,13 +221,13 @@ impl ReplicationClient {
             tokio::select! {
                 // Replicate the next prepare request
                 update = self.update_recv.recv() => {
-                    info!("Sending update to secondary range");
+                    debug!("Sending update to secondary range");
                     Self::process_data(&send_stream, update).await?;
                 }
 
                 // Process messages from the server
                 msg = recv_stream.message() => {
-                    info!("Processing response from secondary range");
+                    debug!("Processing response from secondary range");
                     self.process_response(msg).await?;
                 }
             }

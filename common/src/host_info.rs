@@ -1,12 +1,14 @@
 use std::net::SocketAddr;
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Hash)]
+use serde::Serialize;
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Hash, Serialize)]
 pub struct HostIdentity {
     pub name: String,
     pub zone: crate::region::Zone,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 pub struct HostInfo {
     pub identity: HostIdentity,
     pub address: SocketAddr,

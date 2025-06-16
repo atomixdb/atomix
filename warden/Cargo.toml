@@ -28,6 +28,9 @@ scylla = "0.13.2"
 tokio-util = "0.7.11"
 async-trait = "0.1.83"
 clap = { version = "4.5", features = ["derive"] }
+serde = "1.0.219"
+axum = { version = "0.6.20"}
+
 
 [features]
 test_access = []

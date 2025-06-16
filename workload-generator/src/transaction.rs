@@ -37,7 +37,7 @@ impl Transaction {
         let transaction_id = Uuid::parse_str(&response.get_ref().transaction_id).unwrap();
         // let transaction_id_int = transaction_id.as_u128() as u64;
         // info!("Started transaction with ID: {:?}", transaction_id_int);
-
+        let start = std::time::Instant::now();
         for key in &self.readset {
             let response = client
                 .get(GetRequest {
@@ -72,8 +72,11 @@ impl Transaction {
             };
             results.insert(key, value_int);
         }
+        let duration = start.elapsed();
+        info!("TX Part 1 - Reads: {}ms", duration.as_millis());
 
         // Write the keys
+        let start = std::time::Instant::now();
         if let Some(writeset) = &self.writeset {
             // info!(
             //     "Writing keys: {:?} tx id: {:?}",
@@ -95,7 +98,10 @@ impl Transaction {
                     .unwrap();
             }
         }
+        let duration = start.elapsed();
+        info!("TX Part 2 - Writes: {}ms", duration.as_millis());
 
+        let start = std::time::Instant::now();
         // Commit the transaction
         client
             .commit(CommitRequest {
@@ -103,6 +109,8 @@ impl Transaction {
             })
             .await
             .unwrap();
+        let duration = start.elapsed();
+        info!("TX Part 3 - Commit: {}ms", duration.as_millis());
         // info!(
         //     "Committed transaction with keys: {:?} tx id: {:?}",
         //     self.writeset, transaction_id_int

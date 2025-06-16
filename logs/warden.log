@@ -1,0 +1,470 @@
+[2m2025-06-09T22:35:05.118106Z[0m [32m INFO[0m [2mwarden[0m[2m:[0m Hello, Warden!
+[2m2025-06-09T22:35:05.130421Z[0m [32m INFO[0m [2mwarden::server[0m[2m:[0m WardenServer listening on 127.0.0.1:50053
+[2m2025-06-09T22:35:05.131455Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Need 1 range servers at least, got 0. Will wait.
+[2m2025-06-09T22:35:05.933648Z[0m [32m INFO[0m [1mregister_range_server[0m[1m{[0m[3mrequest[0m[2m=[0mRequest { metadata: MetadataMap { headers: {"te": "trailers", "content-type": "application/grpc", "user-agent": "tonic/0.11.0"} }, message: Streaming, extensions: Extensions }[1m}[0m[2m:[0m [2mwarden::server[0m[2m:[0m Registering range server: 127.0.0.1
+[2m2025-06-09T22:35:05.933678Z[0m [32m INFO[0m [1mregister_range_server[0m[1m{[0m[3mrequest[0m[2m=[0mRequest { metadata: MetadataMap { headers: {"te": "trailers", "content-type": "application/grpc", "user-agent": "tonic/0.11.0"} }, message: Streaming, extensions: Extensions }[1m}[0m[2m:[0m [2mwarden::assignment_computation[0m[2m:[0m Registering range server: HostInfo { identity: HostIdentity { name: "127.0.0.1", zone: Zone { region: Region { cloud: None, name: "" }, name: "a" } }, address: 0.0.0.0:0, warden_connection_epoch: 35 }.
+[2m2025-06-09T22:35:05.934965Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:06.133264Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Added servers: [HostInfoWrapper(HostInfo { identity: HostIdentity { name: "127.0.0.1", zone: Zone { region: Region { cloud: None, name: "" }, name: "a" } }, address: 0.0.0.0:0, warden_connection_epoch: 35 })], removed servers: [].
+[2m2025-06-09T22:35:06.134014Z[0m [32m INFO[0m [2mwarden::persistence::cassandra[0m[2m:[0m Writing assignments for version: 1749508505131
+[2m2025-06-09T22:35:06.134028Z[0m [32m INFO[0m [2mwarden::persistence::cassandra[0m[2m:[0m Finished writing assignments for version: 1749508505131
+[2m2025-06-09T22:35:06.134038Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range assignments at version 1749508505131: [].
+[2m2025-06-09T22:35:06.134576Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:35:06.935206Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:07.135881Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:35:07.934194Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:08.141321Z[0m [33m WARN[0m [2mwarden::assignment_computation[0m[2m:[0m Range statuses for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 } are not complete.
+[2m2025-06-09T22:35:08.141338Z[0m [33m WARN[0m [2mwarden::assignment_computation[0m[2m:[0m Range statuses for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 } are not complete.
+[2m2025-06-09T22:35:08.141344Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:35:08.141349Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Added servers: [], removed servers: [].
+[2m2025-06-09T22:35:08.141586Z[0m [32m INFO[0m [2mwarden::persistence::cassandra[0m[2m:[0m Writing assignments for version: 1749508505132
+[2m2025-06-09T22:35:08.142141Z[0m [32m INFO[0m [2mwarden::persistence::cassandra[0m[2m:[0m Finished writing assignments for version: 1749508505132
+[2m2025-06-09T22:35:08.142156Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range assignments at version 1749508505132: [RangeAssignment { range: RangeInfo { keyspace_id: KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }, id: be120d68-5a94-4d6b-827d-0072915e12b6, key_range: KeyRange { lower_bound_inclusive: Some(b"\0"), upper_bound_exclusive: Some(b"\x01") }, range_type: Primary }, assignee: "127.0.0.1" }, RangeAssignment { range: RangeInfo { keyspace_id: KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }, id: f1b4d14e-7b8d-4b09-9f82-3a4514021672, key_range: KeyRange { lower_bound_inclusive: Some(b"\0"), upper_bound_exclusive: Some(b"\x01") }, range_type: Secondary }, assignee: "127.0.0.1" }].
+[2m2025-06-09T22:35:08.143034Z[0m [33m WARN[0m [2mwarden::assignment_computation[0m[2m:[0m Range statuses for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 } are not complete.
+[2m2025-06-09T22:35:08.143048Z[0m [33m WARN[0m [2mwarden::assignment_computation[0m[2m:[0m Range statuses for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 } are not complete.
+[2m2025-06-09T22:35:08.143054Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:35:08.935321Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:08.935355Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: None, applied_epoch: None
+[2m2025-06-09T22:35:08.935365Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:09.145900Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:35:09.934235Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:09.934269Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(367), applied_epoch: None
+[2m2025-06-09T22:35:09.934276Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:10.148200Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:10.934184Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:10.934218Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(452), applied_epoch: Some(367)
+[2m2025-06-09T22:35:10.934229Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:11.150364Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 367
+[2m2025-06-09T22:35:11.150380Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:11.934513Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:11.934567Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(538), applied_epoch: Some(452)
+[2m2025-06-09T22:35:11.934578Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:12.152101Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 452
+[2m2025-06-09T22:35:12.152127Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:12.934740Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:12.934808Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(622), applied_epoch: Some(538)
+[2m2025-06-09T22:35:12.934817Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:13.154785Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 538
+[2m2025-06-09T22:35:13.154809Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:13.934594Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:13.934627Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(706), applied_epoch: Some(622)
+[2m2025-06-09T22:35:13.934634Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:14.156727Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 622
+[2m2025-06-09T22:35:14.156746Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:14.934935Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:14.934959Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(792), applied_epoch: Some(706)
+[2m2025-06-09T22:35:14.934966Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:15.158954Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 706
+[2m2025-06-09T22:35:15.158972Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:15.934935Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:15.934954Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(876), applied_epoch: Some(792)
+[2m2025-06-09T22:35:15.934960Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:16.161881Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 792
+[2m2025-06-09T22:35:16.161906Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:16.934925Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:16.934946Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(961), applied_epoch: Some(876)
+[2m2025-06-09T22:35:16.934952Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:17.163947Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 876
+[2m2025-06-09T22:35:17.163989Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:17.934887Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:17.934920Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1046), applied_epoch: Some(961)
+[2m2025-06-09T22:35:17.934926Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:18.166472Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 961
+[2m2025-06-09T22:35:18.166500Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:18.934673Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:18.934695Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1131), applied_epoch: Some(1046)
+[2m2025-06-09T22:35:18.934702Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:19.168247Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1046
+[2m2025-06-09T22:35:19.168276Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:19.934440Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:19.934466Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1216), applied_epoch: Some(1131)
+[2m2025-06-09T22:35:19.934472Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:20.170302Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1131
+[2m2025-06-09T22:35:20.170325Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:20.934236Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:20.934257Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1301), applied_epoch: Some(1216)
+[2m2025-06-09T22:35:20.934263Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:21.172451Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1216
+[2m2025-06-09T22:35:21.172472Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:21.934758Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:21.934777Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1386), applied_epoch: Some(1301)
+[2m2025-06-09T22:35:21.934783Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:22.174347Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1301
+[2m2025-06-09T22:35:22.174363Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:22.934740Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:22.934777Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1471), applied_epoch: Some(1386)
+[2m2025-06-09T22:35:22.934788Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:23.176346Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1386
+[2m2025-06-09T22:35:23.176369Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:23.934940Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:23.934965Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1555), applied_epoch: Some(1471)
+[2m2025-06-09T22:35:23.934971Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:24.178430Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1471
+[2m2025-06-09T22:35:24.178447Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:24.934628Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:24.934664Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1640), applied_epoch: Some(1555)
+[2m2025-06-09T22:35:24.934671Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:25.180881Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1555
+[2m2025-06-09T22:35:25.180911Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:25.934464Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:25.934500Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1725), applied_epoch: Some(1640)
+[2m2025-06-09T22:35:25.934506Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:26.183361Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1640
+[2m2025-06-09T22:35:26.183380Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:26.934210Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:26.934256Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1810), applied_epoch: Some(1725)
+[2m2025-06-09T22:35:26.934263Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:27.185050Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1725
+[2m2025-06-09T22:35:27.185066Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:27.934249Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:27.934268Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1895), applied_epoch: Some(1810)
+[2m2025-06-09T22:35:27.934276Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:28.187175Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1810
+[2m2025-06-09T22:35:28.187194Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:28.934877Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:28.934925Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(1981), applied_epoch: Some(1895)
+[2m2025-06-09T22:35:28.934936Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:29.189126Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1895
+[2m2025-06-09T22:35:29.189158Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:29.934337Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:29.934370Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2066), applied_epoch: Some(1981)
+[2m2025-06-09T22:35:29.934377Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:30.191260Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 1981
+[2m2025-06-09T22:35:30.191282Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:30.934460Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:30.934486Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2150), applied_epoch: Some(2066)
+[2m2025-06-09T22:35:30.934494Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:31.193371Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2066
+[2m2025-06-09T22:35:31.193398Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:31.934228Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:31.934253Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2236), applied_epoch: Some(2150)
+[2m2025-06-09T22:35:31.934261Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:32.195364Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2150
+[2m2025-06-09T22:35:32.195387Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:32.934123Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:32.934166Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2320), applied_epoch: Some(2236)
+[2m2025-06-09T22:35:32.934172Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:33.197883Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2236
+[2m2025-06-09T22:35:33.197909Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:33.934490Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:33.934526Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2405), applied_epoch: Some(2320)
+[2m2025-06-09T22:35:33.934532Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:34.200532Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2320
+[2m2025-06-09T22:35:34.200559Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:34.934215Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:34.934252Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2489), applied_epoch: Some(2405)
+[2m2025-06-09T22:35:34.934259Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:35.202666Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2405
+[2m2025-06-09T22:35:35.202688Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:35.935062Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:35.935089Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2573), applied_epoch: Some(2489)
+[2m2025-06-09T22:35:35.935096Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:36.204203Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2489
+[2m2025-06-09T22:35:36.204223Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:36.934993Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:36.935032Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2657), applied_epoch: Some(2573)
+[2m2025-06-09T22:35:36.935038Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:37.206588Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2573
+[2m2025-06-09T22:35:37.206610Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:37.934777Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:37.934798Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2741), applied_epoch: Some(2657)
+[2m2025-06-09T22:35:37.934805Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:38.208660Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2657
+[2m2025-06-09T22:35:38.208677Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:38.934070Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:38.934091Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2826), applied_epoch: Some(2741)
+[2m2025-06-09T22:35:38.934097Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:39.210806Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2741
+[2m2025-06-09T22:35:39.210822Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:39.934938Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:39.934961Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2911), applied_epoch: Some(2826)
+[2m2025-06-09T22:35:39.934968Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:40.212411Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2826
+[2m2025-06-09T22:35:40.212440Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:40.934633Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:40.934655Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(2996), applied_epoch: Some(2911)
+[2m2025-06-09T22:35:40.934685Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:41.214617Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2911
+[2m2025-06-09T22:35:41.214642Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:41.934317Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:41.934345Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3081), applied_epoch: Some(2996)
+[2m2025-06-09T22:35:41.934352Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:42.216455Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 2996
+[2m2025-06-09T22:35:42.216477Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:42.934237Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:42.934281Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3166), applied_epoch: Some(3081)
+[2m2025-06-09T22:35:42.934289Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:43.218402Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3081
+[2m2025-06-09T22:35:43.218429Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:43.934440Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:43.934478Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3251), applied_epoch: Some(3166)
+[2m2025-06-09T22:35:43.934490Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:44.220667Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3166
+[2m2025-06-09T22:35:44.220695Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:44.934661Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:44.934683Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3336), applied_epoch: Some(3251)
+[2m2025-06-09T22:35:44.934689Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:45.222813Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3251
+[2m2025-06-09T22:35:45.222857Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:45.934675Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:45.934702Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3421), applied_epoch: Some(3336)
+[2m2025-06-09T22:35:45.934708Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:46.225650Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3336
+[2m2025-06-09T22:35:46.225677Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:46.934438Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:46.934471Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3506), applied_epoch: Some(3421)
+[2m2025-06-09T22:35:46.934477Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:47.227898Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3421
+[2m2025-06-09T22:35:47.227935Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:47.934406Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:47.934439Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3591), applied_epoch: Some(3506)
+[2m2025-06-09T22:35:47.934446Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:48.230605Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3506
+[2m2025-06-09T22:35:48.230637Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:48.935051Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:48.935084Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3676), applied_epoch: Some(3591)
+[2m2025-06-09T22:35:48.935092Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:49.231830Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3591
+[2m2025-06-09T22:35:49.231871Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:49.934272Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:49.934298Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3761), applied_epoch: Some(3676)
+[2m2025-06-09T22:35:49.934304Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:50.234309Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3676
+[2m2025-06-09T22:35:50.234329Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:50.934758Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:50.934778Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3846), applied_epoch: Some(3761)
+[2m2025-06-09T22:35:50.934784Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:51.236197Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3761
+[2m2025-06-09T22:35:51.236216Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:51.934546Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:51.934570Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(3930), applied_epoch: Some(3846)
+[2m2025-06-09T22:35:51.934577Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:52.238168Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3846
+[2m2025-06-09T22:35:52.238187Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:52.934452Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:52.934481Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4015), applied_epoch: Some(3930)
+[2m2025-06-09T22:35:52.934488Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:53.240402Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 3930
+[2m2025-06-09T22:35:53.240426Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:53.934655Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:53.934690Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4100), applied_epoch: Some(4015)
+[2m2025-06-09T22:35:53.934701Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:54.242657Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4015
+[2m2025-06-09T22:35:54.242675Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:54.934911Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:54.934939Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4185), applied_epoch: Some(4100)
+[2m2025-06-09T22:35:54.934985Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:55.243923Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4100
+[2m2025-06-09T22:35:55.243942Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:55.934293Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:55.934337Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4270), applied_epoch: Some(4185)
+[2m2025-06-09T22:35:55.934349Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:56.246409Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4185
+[2m2025-06-09T22:35:56.246431Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:56.934709Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:56.934730Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4355), applied_epoch: Some(4270)
+[2m2025-06-09T22:35:56.934736Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:57.248781Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4270
+[2m2025-06-09T22:35:57.248797Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:57.934097Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:57.934142Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4440), applied_epoch: Some(4355)
+[2m2025-06-09T22:35:57.934150Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:58.250414Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4355
+[2m2025-06-09T22:35:58.250428Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:58.934173Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:58.934199Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4525), applied_epoch: Some(4440)
+[2m2025-06-09T22:35:58.934205Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:35:59.252825Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4440
+[2m2025-06-09T22:35:59.252887Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:35:59.934376Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:35:59.934399Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4610), applied_epoch: Some(4525)
+[2m2025-06-09T22:35:59.934406Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:00.255394Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4525
+[2m2025-06-09T22:36:00.255411Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:00.934293Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:00.934311Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4695), applied_epoch: Some(4610)
+[2m2025-06-09T22:36:00.934316Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:01.257486Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4610
+[2m2025-06-09T22:36:01.257519Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:01.934408Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:01.934448Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4780), applied_epoch: Some(4695)
+[2m2025-06-09T22:36:01.934457Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:02.259825Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4695
+[2m2025-06-09T22:36:02.259867Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:02.934254Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:02.934286Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4865), applied_epoch: Some(4780)
+[2m2025-06-09T22:36:02.934292Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:03.262344Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4780
+[2m2025-06-09T22:36:03.262368Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:03.934288Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:03.934312Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(4949), applied_epoch: Some(4865)
+[2m2025-06-09T22:36:03.934320Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:04.264715Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4865
+[2m2025-06-09T22:36:04.264768Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:04.934474Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:04.934496Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5033), applied_epoch: Some(4949)
+[2m2025-06-09T22:36:04.934503Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:05.266756Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 4949
+[2m2025-06-09T22:36:05.266780Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:05.934051Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:05.934074Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5117), applied_epoch: Some(5033)
+[2m2025-06-09T22:36:05.934083Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:06.268103Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5033
+[2m2025-06-09T22:36:06.268123Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:06.934218Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:06.934250Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5203), applied_epoch: Some(5117)
+[2m2025-06-09T22:36:06.934257Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:07.270534Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5117
+[2m2025-06-09T22:36:07.270565Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:07.934937Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:07.934964Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5287), applied_epoch: Some(5203)
+[2m2025-06-09T22:36:07.934972Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:08.272790Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5203
+[2m2025-06-09T22:36:08.272810Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:08.934699Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:08.934745Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5371), applied_epoch: Some(5287)
+[2m2025-06-09T22:36:08.934806Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:09.274425Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5287
+[2m2025-06-09T22:36:09.274450Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:09.934794Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:09.934823Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5455), applied_epoch: Some(5371)
+[2m2025-06-09T22:36:09.934829Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:10.275929Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5371
+[2m2025-06-09T22:36:10.275955Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:10.934756Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:10.934784Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5540), applied_epoch: Some(5455)
+[2m2025-06-09T22:36:10.934790Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:11.278837Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5455
+[2m2025-06-09T22:36:11.278872Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:11.934619Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:11.934660Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5624), applied_epoch: Some(5540)
+[2m2025-06-09T22:36:11.934672Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:12.281795Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5540
+[2m2025-06-09T22:36:12.281821Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:12.934218Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:12.934249Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5708), applied_epoch: Some(5624)
+[2m2025-06-09T22:36:12.934256Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:13.282902Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5624
+[2m2025-06-09T22:36:13.282928Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:13.934965Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:13.935019Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5792), applied_epoch: Some(5708)
+[2m2025-06-09T22:36:13.935026Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:14.285576Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5708
+[2m2025-06-09T22:36:14.285601Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:14.935081Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:14.935108Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5877), applied_epoch: Some(5792)
+[2m2025-06-09T22:36:14.935114Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:15.287004Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5792
+[2m2025-06-09T22:36:15.287027Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:15.934495Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:15.934544Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(5962), applied_epoch: Some(5877)
+[2m2025-06-09T22:36:15.934555Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:16.289418Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5877
+[2m2025-06-09T22:36:16.289443Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:16.934597Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:16.934622Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6046), applied_epoch: Some(5962)
+[2m2025-06-09T22:36:16.934628Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:17.291697Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 5962
+[2m2025-06-09T22:36:17.291716Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:17.934479Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:17.934505Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6131), applied_epoch: Some(6046)
+[2m2025-06-09T22:36:17.934512Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:18.294049Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6046
+[2m2025-06-09T22:36:18.294122Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:18.934308Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:18.934333Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6216), applied_epoch: Some(6131)
+[2m2025-06-09T22:36:18.934339Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:19.296568Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6131
+[2m2025-06-09T22:36:19.296591Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:19.934338Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:19.934364Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6301), applied_epoch: Some(6216)
+[2m2025-06-09T22:36:19.934370Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:20.298807Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6216
+[2m2025-06-09T22:36:20.298829Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:20.934570Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:20.934594Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6386), applied_epoch: Some(6301)
+[2m2025-06-09T22:36:20.934600Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:21.301698Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6301
+[2m2025-06-09T22:36:21.301720Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:21.935047Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:21.935079Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6471), applied_epoch: Some(6386)
+[2m2025-06-09T22:36:21.935085Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:22.303431Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6386
+[2m2025-06-09T22:36:22.303456Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:22.934659Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:22.934692Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6556), applied_epoch: Some(6471)
+[2m2025-06-09T22:36:22.934722Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:23.305409Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6471
+[2m2025-06-09T22:36:23.305435Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:23.934675Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:23.934721Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6641), applied_epoch: Some(6556)
+[2m2025-06-09T22:36:23.934732Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:24.307792Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6556
+[2m2025-06-09T22:36:24.307818Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:24.934348Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:24.934381Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6726), applied_epoch: Some(6641)
+[2m2025-06-09T22:36:24.934388Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:25.309880Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6641
+[2m2025-06-09T22:36:25.309904Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:25.934833Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:25.934888Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6811), applied_epoch: Some(6726)
+[2m2025-06-09T22:36:25.934897Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:26.312446Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6726
+[2m2025-06-09T22:36:26.312472Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:26.934668Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:26.934705Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6896), applied_epoch: Some(6811)
+[2m2025-06-09T22:36:26.934715Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:27.314857Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6811
+[2m2025-06-09T22:36:27.314881Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:27.934502Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:27.934554Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(6980), applied_epoch: Some(6896)
+[2m2025-06-09T22:36:27.934560Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:28.318163Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6896
+[2m2025-06-09T22:36:28.318192Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:28.934567Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:28.934600Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7065), applied_epoch: Some(6980)
+[2m2025-06-09T22:36:28.934606Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:29.320115Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 6980
+[2m2025-06-09T22:36:29.320141Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:29.934965Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:29.935002Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7151), applied_epoch: Some(7065)
+[2m2025-06-09T22:36:29.935008Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:30.322771Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 7065
+[2m2025-06-09T22:36:30.322791Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:30.934313Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:30.934341Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7235), applied_epoch: Some(7151)
+[2m2025-06-09T22:36:30.934348Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:31.324659Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 7151
+[2m2025-06-09T22:36:31.324684Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:31.934133Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:31.934162Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7320), applied_epoch: Some(7235)
+[2m2025-06-09T22:36:31.934169Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:32.327022Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 7235
+[2m2025-06-09T22:36:32.327070Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:32.934893Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:32.934927Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7351), applied_epoch: Some(7320)
+[2m2025-06-09T22:36:32.934938Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:33.329612Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 7320
+[2m2025-06-09T22:36:33.329635Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Sending desired applied epochs update.
+[2m2025-06-09T22:36:33.934335Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:33.934374Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7351), applied_epoch: Some(7351)
+[2m2025-06-09T22:36:33.934386Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:34.331661Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 7351
+[2m2025-06-09T22:36:34.331684Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:36:34.934592Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:34.934625Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7351), applied_epoch: Some(7351)
+[2m2025-06-09T22:36:34.934637Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:35.333715Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 7351
+[2m2025-06-09T22:36:35.333737Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:36:35.934290Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:35.934323Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7351), applied_epoch: Some(7351)
+[2m2025-06-09T22:36:35.934334Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:36.335369Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 7351
+[2m2025-06-09T22:36:36.335391Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:36:36.934760Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:36.934800Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7351), applied_epoch: Some(7351)
+[2m2025-06-09T22:36:36.934810Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary
+[2m2025-06-09T22:36:37.337465Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Desired applied epoch for keyspace KeyspaceId { id: 33986fbb-e724-4a8d-bb0c-950a4b1f4264 }: 7351
+[2m2025-06-09T22:36:37.337485Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m No desired applied epochs to send.
+[2m2025-06-09T22:36:37.934763Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Heartbeat received. Updating assignment computation.
+[2m2025-06-09T22:36:37.934782Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range f1b4d14e-7b8d-4b09-9f82-3a4514021672: secondary, wal_epoch: Some(7351), applied_epoch: Some(7351)
+[2m2025-06-09T22:36:37.934788Z[0m [32m INFO[0m [2mwarden::assignment_computation[0m[2m:[0m Range status for range be120d68-5a94-4d6b-827d-0072915e12b6: primary

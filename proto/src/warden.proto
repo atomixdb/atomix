@@ -95,6 +95,7 @@ message RegisterRangeServerRequest {
 message PrimaryRangeStatus {
     RangeId range_id = 1;
     uint64 leader_sequence_number = 2;
+    optional uint64 latest_wal_epoch = 3;
 }
 
 message SecondaryRangeStatus {

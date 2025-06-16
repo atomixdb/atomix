@@ -1,0 +1,1 @@
+Query result: (QueryResult { rows: Some([Row { columns: [Some(Boolean(true))] }]), warnings: [], tracing_id: None, metadata: Some(ResultMetadata { col_count: 1, col_specs: [ColumnSpec { table_spec: TableSpec { ks_name: "atomix", table_name: "keyspaces" }, name: "[applied]", typ: Boolean }] }), serialized_size: 4 }, NoMorePages)

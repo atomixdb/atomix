@@ -17,6 +17,7 @@ use common::replication_mapping::ReplicationMapping;
 use proto::universe::universe_client::UniverseClient;
 use proto::universe::{KeyspaceInfo, ListKeyspacesRequest};
 use proto::warden::{range_server_request, FullAssignment, RangeServerRequest, WardenUpdate};
+use serde::Serialize;
 use std::cmp::{Ordering, Reverse};
 use std::hash::{Hash, Hasher};
 use std::sync::RwLock;
@@ -90,17 +91,18 @@ pub trait AssignmentComputation {
     ) -> Option<WardenUpdate>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "test_access", pub_fields::pub_fields)]
-struct PrimaryRangeStatus {
+pub struct PrimaryRangeStatus {
     range_id: FullRangeId,
     leader_sequence_number: u64,
     host_info: HostInfo,
+    latest_wal_epoch: Option<u64>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 #[cfg_attr(feature = "test_access", pub_fields::pub_fields)]
-struct SecondaryRangeStatus {
+pub struct SecondaryRangeStatus {
     range_id: FullRangeId,
     leader_sequence_number: u64,
     host_info: HostInfo,
@@ -167,6 +169,7 @@ impl LoadedRangeStatus {
                     range_id: primary_proto.range_id.as_ref().unwrap().into(),
                     leader_sequence_number: primary_proto.leader_sequence_number,
                     host_info,
+                    latest_wal_epoch: primary_proto.latest_wal_epoch,
                 })
             }
             proto::warden::loaded_range_status::Status::Secondary(secondary_proto) => {
@@ -203,7 +206,8 @@ pub struct AssignmentComputationImpl {
     region: Region,
     range_assignments: Mutex<HashMap<i64, Vec<RangeAssignment>>>,
     desired_applied_epochs: Mutex<HashMap<KeyspaceId, u64>>,
-    range_statuses: RwLock<HashMap<FullRangeId, RangeStatus>>,
+    // TODO(yanniszark): Put this behind the AssignmentComputation trait.
+    pub range_statuses: RwLock<HashMap<FullRangeId, RangeStatus>>,
     heartbeats_stream_mux: StreamMultiplexer,
     replication_mappings: Mutex<Vec<ReplicationMapping>>,
     current_version: Mutex<i64>,

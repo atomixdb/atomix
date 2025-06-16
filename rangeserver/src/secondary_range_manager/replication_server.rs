@@ -14,6 +14,7 @@ use tokio_stream::Stream;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tonic::Status as TStatus;
+use tracing::debug;
 use tracing::error;
 use tracing::info;
 
@@ -132,7 +133,7 @@ where
                 }
                 replicate_request::Request::Data(data) => {
                     // Persist to WAL
-                    info!("Received data for range {}", self.range_id.range_id);
+                    debug!("Received data for range {}", self.range_id.range_id);
                     let wal_offset = data.primary_wal_offset;
                     let epoch = data.epoch;
                     self.wal.append_replicated_commit(data).await.unwrap();

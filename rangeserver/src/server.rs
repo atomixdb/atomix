@@ -42,7 +42,7 @@ use proto::rangeserver::{
     replicate_request, replicate_response, PrefetchRequest, PrefetchResponse,
     ReplicateInitResponse, ReplicateRequest, ReplicateResponse,
 };
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::prefetching_buffer::PrefetchingBuffer;
 
@@ -234,7 +234,7 @@ where
     }
 
     async fn maybe_start_transaction(&self, id: Uuid, info: Option<FlatbufTransactionInfo<'_>>) {
-        info!("Transaction maybe starting: {}", id);
+        debug!("Transaction maybe starting: {}", id);
         let info = match info {
             None => return,
             Some(info) => info,
@@ -250,7 +250,7 @@ where
             overall_timeout,
         });
         tx_table.insert(id, tx_info);
-        info!("Transaction starting: {}", id);
+        debug!("Transaction starting: {}", id);
     }
 
     async fn get_or_create_transaction_info(&self, id: Uuid) -> Arc<TransactionInfo> {

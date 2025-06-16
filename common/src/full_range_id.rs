@@ -1,11 +1,12 @@
 use std::str::FromStr;
 
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::keyspace_id::KeyspaceId;
 use crate::range_type::RangeType;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Hash, Serialize)]
 pub struct FullRangeId {
     pub keyspace_id: KeyspaceId,
     pub range_id: Uuid,

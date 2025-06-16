@@ -71,6 +71,19 @@ def run_workload(config):
 
     # Run the workload generator with timeout
     try:
+        cmd = [
+            "cargo",
+            "run",
+            "--release",
+            "--bin",
+            "workload-generator",
+            "--",
+            "--workload-config",
+            str(workload_config_path),
+            "--config",
+            str(config_path),
+            "--create-keyspace",
+        ]
         process = subprocess.Popen(
             [
                 "cargo",
@@ -90,6 +103,7 @@ def run_workload(config):
             stderr=subprocess.PIPE,
             text=True,
         )
+        print(cmd)
 
         try:
             stdout, stderr = process.communicate(timeout=60 * 10)  # 10 minutes timeout
@@ -131,7 +145,7 @@ def main():
 
     config = {
         "num-keys": tune.grid_search([1]),
-        "max-concurrency": tune.grid_search([1]),
+        "max-concurrency": tune.grid_search([8]),
         "num-queries": tune.grid_search([10000]),
         "zipf-exponent": tune.grid_search([0]),
         "namespace": namespace,

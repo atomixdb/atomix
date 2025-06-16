@@ -2,6 +2,7 @@ use super::replication_client::ReplicationClientHandle;
 use super::{GetResult, LoadableRange, PrepareResult, RangeManager as Trait};
 use crate::error::Error;
 use crate::range_manager::lock_table::LockResult;
+use crate::secondary_range_manager::r#impl::AtomicEpoch;
 use crate::{
     epoch_supplier::EpochSupplier, key_version::KeyVersion, range_manager::lock_table,
     storage::RangeInfo, storage::Storage, transaction_abort_reason::TransactionAbortReason,
@@ -35,6 +36,7 @@ struct LoadedState {
     range_info: RangeInfo,
     highest_known_epoch: HighestKnownEpoch,
     lock_table: lock_table::LockTable,
+    latest_wal_epoch: Arc<AtomicEpoch>,
     // TODO: need more efficient representation of prepares than raw bytes.
     pending_prepare_records: Mutex<HashMap<Uuid, Bytes>>,
     replication_handles: Mutex<HashMap<Uuid, ReplicationClientHandle>>,
@@ -389,6 +391,9 @@ where
                     .append_commit(commit)
                     .await
                     .map_err(Error::from_wal_error)?;
+                // Update the latest_wal_epoch
+                state.latest_wal_epoch.set(commit.epoch());
+
                 let prepare_record_bytes = {
                     let mut pending_prepare_records = state.pending_prepare_records.lock().await;
                     // TODO: handle prior removals.
@@ -518,6 +523,7 @@ where
             State::Loaded(state) => Ok(PrimaryRangeStatus {
                 range_id: Some(self.range_id.into()),
                 leader_sequence_number: state.range_info.common().leader_sequence_number,
+                latest_wal_epoch: state.latest_wal_epoch.get(),
             }),
         }
     }
@@ -617,11 +623,15 @@ where
                     )
                     .await
                 });
+                // TODO: Initialize the latest_wal_epoch by checking the last WAL entry
+                // that's a COMMIT.
+
                 // TODO: apply WAL here!
                 Ok(LoadedState {
                     range_info,
                     highest_known_epoch: HighestKnownEpoch::new(highest_known_epoch),
                     lock_table: lock_table::LockTable::new(),
+                    latest_wal_epoch: Arc::new(AtomicEpoch::new(None)),
                     pending_prepare_records: Mutex::new(HashMap::new()),
                     replication_handles: Mutex::new(HashMap::new()),
                     renew_epoch_lease_task: Some(renew_epoch_lease_task),

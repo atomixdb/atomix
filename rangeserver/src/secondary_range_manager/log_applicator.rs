@@ -261,7 +261,7 @@ where
                     });
             }
 
-            info!(
+            debug!(
                 "Successfully applied log entry with id: {}",
                 replicated_commit.transaction_id
             );

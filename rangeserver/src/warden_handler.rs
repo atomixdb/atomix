@@ -16,8 +16,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, WatchStream};
 use tokio_util::sync::CancellationToken;
 use tonic::{Request, Streaming};
-use tracing::error;
-use tracing::info;
+use tracing::{debug, error};
 use uuid::Uuid;
 
 use crate::epoch_supplier::EpochSupplier;
@@ -239,21 +238,21 @@ impl WardenHandler {
                 }
                 _ = heartbeat_ticker.tick() => {
                     let heartbeat = heartbeat_supplier.get_heartbeat().await;
-                    info!("Sending heartbeat");
+                    debug!("Sending heartbeat");
                     // Print the heartbeat statuses.
                     for range_status in heartbeat.range_status.iter() {
                         match &range_status.status {
                             Some(proto::warden::loaded_range_status::Status::Primary(primary_range_status)) => {
-                                info!("Primary range status: range_id={:?}", primary_range_status.range_id);
+                                debug!("Primary range status: range_id={:?}", primary_range_status.range_id);
                             }
                             Some(proto::warden::loaded_range_status::Status::Secondary(secondary_range_status)) => {
-                                info!("Secondary range status: range_id={:?}, wal_epoch={:?}, applied_epoch={:?}",
+                                debug!("Secondary range status: range_id={:?}, wal_epoch={:?}, applied_epoch={:?}",
                                     secondary_range_status.range_id,
                                     secondary_range_status.wal_epoch,
                                     secondary_range_status.applied_epoch);
                             }
                             None => {
-                                info!("Range status: unknown");
+                                debug!("Range status: unknown");
                             }
                         }
                     }

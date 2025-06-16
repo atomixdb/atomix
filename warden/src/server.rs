@@ -28,6 +28,7 @@ use tracing::{debug, info, instrument};
 
 use crate::{
     assignment_computation::{AssignmentComputation, AssignmentComputationImpl},
+    debug::{run_debug_server, DebugServer},
     persistence::cassandra::Cassandra,
     stream_multiplexer::StreamMultiplexer,
 };
@@ -135,7 +136,18 @@ pub async fn run_warden_server(
     )
     .await;
     let clone = assignment_computation.clone();
-    clone.start_computation(heartbeat_receiver, runtime, cancellation_token);
+    let runtime_clone = runtime.clone();
+    clone.start_computation(heartbeat_receiver, runtime_clone, cancellation_token);
+
+    // Start the debug server.
+    let debug_addr = format!("{}:{}", "127.0.0.1", 7777);
+    let debug_computation = assignment_computation.clone();
+    runtime.spawn(async move {
+        if let Err(e) = run_debug_server(debug_addr, debug_computation).await {
+            tracing::error!("Debug server error: {}", e);
+        }
+    });
+
     let warden_server = WardenServer::new(assignment_computation);
 
     info!("WardenServer listening on {}", addr);

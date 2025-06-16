@@ -93,18 +93,19 @@ impl LockTable {
                         .waiting_to_acquire
                         .back()
                         .map_or(current_holder.transaction.id, |r| r.transaction.id);
-                    if highest_waiter > tx.id {
-                        // TODO: allow for skipping these checks if locks are ordered!
-                        Err(Error::TransactionAborted(TransactionAbortReason::WaitDie))
-                    } else {
-                        let req = LockRequest {
-                            transaction: tx.clone(),
-                            sender: s,
-                            when_requested: chrono::Utc::now(),
-                        };
-                        state.waiting_to_acquire.push_back(req);
-                        Ok(LockResult::WaitToAcquire(r))
-                    }
+                    // TODO(yanniszark): re-enable this check.
+                    // if highest_waiter > tx.id {
+                    //     // TODO: allow for skipping these checks if locks are ordered!
+                    //     Err(Error::TransactionAborted(TransactionAbortReason::WaitDie))
+                    // } else {
+                    let req = LockRequest {
+                        transaction: tx.clone(),
+                        sender: s,
+                        when_requested: chrono::Utc::now(),
+                    };
+                    state.waiting_to_acquire.push_back(req);
+                    Ok(LockResult::WaitToAcquire(r))
+                    // }
                 }
             }
         }
