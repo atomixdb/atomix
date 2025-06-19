@@ -46,7 +46,7 @@ pub trait RangeManager {
         prepare: PrepareRequest<'_>,
     ) -> Result<PrepareResult, Error>;
     /// Abort the transaction.
-    async fn abort(&self, tx: Arc<TransactionInfo>, abort: AbortRequest<'_>) -> Result<(), Error>;
+    async fn abort(&self, tx_id: Uuid, abort: AbortRequest<'_>) -> Result<(), Error>;
     /// Run the commit phase of two-phase commit.
     /// Commit *informs* the range manager of a transaction commit, it does not
     /// decide the transaction outcome.
